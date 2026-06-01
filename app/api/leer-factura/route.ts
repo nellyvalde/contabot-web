@@ -11,7 +11,17 @@ export async function POST(request: NextRequest) {
 
     const bytes = await file.arrayBuffer()
     const base64 = Buffer.from(bytes).toString('base64')
-    const mediaType = file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+    const isPDF = file.type === 'application/pdf'
+
+    const contentBlock = isPDF
+      ? {
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: base64 }
+        }
+      : {
+          type: 'image',
+          source: { type: 'base64', media_type: file.type, data: base64 }
+        }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -27,10 +37,7 @@ export async function POST(request: NextRequest) {
           {
             role: 'user',
             content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: mediaType, data: base64 }
-              },
+              contentBlock,
               {
                 type: 'text',
                 text: `Analiza esta factura y extrae los datos en formato JSON exactamente así:
