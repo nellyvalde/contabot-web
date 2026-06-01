@@ -1,9 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
-
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-})
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,20 +13,27 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(bytes).toString('base64')
     const mediaType = file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType, data: base64 }
-            },
-            {
-              type: 'text',
-              text: `Analiza esta factura y extrae los datos en formato JSON exactamente así:
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-6',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: mediaType, data: base64 }
+              },
+              {
+                type: 'text',
+                text: `Analiza esta factura y extrae los datos en formato JSON exactamente así:
 {
   "proveedor": "nombre del proveedor o empresa",
   "fecha": "fecha en formato YYYY-MM-DD",
@@ -41,18 +43,22 @@ export async function POST(request: NextRequest) {
   "iva": 0
 }
 Solo responde con el JSON, sin texto adicional.`
-            }
-          ]
-        }
-      ]
+              }
+            ]
+          }
+        ]
+      })
     })
 
-    const texto = response.content[0].type === 'text' ? response.content[0].text : ''
-    const datos = JSON.parse(texto)
-    
+    const data = await response.json()
+    const texto = data.content?.[0]?.text ?? ''
+    const clean = texto.replace(/```json|```/g, '').trim()
+    const datos = JSON.parse(clean)
+
     return NextResponse.json({ success: true, datos })
- } catch (error) {
-    console.error('ERROR CONTABOT:', error)
+
+  } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+}
