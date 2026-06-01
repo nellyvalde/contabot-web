@@ -14,14 +14,8 @@ export async function POST(request: NextRequest) {
     const isPDF = file.type === 'application/pdf'
 
     const contentBlock = isPDF
-      ? {
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: base64 }
-        }
-      : {
-          type: 'image',
-          source: { type: 'base64', media_type: file.type, data: base64 }
-        }
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+      : { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -40,7 +34,25 @@ export async function POST(request: NextRequest) {
               contentBlock,
               {
                 type: 'text',
-                text: `Analiza esta factura electronica colombiana. REGLAS: Si es Factura de Venta el campo proveedor debe ser quien RECIBE la factura (el cliente, aparece como Facturado a). Si es Factura de Compra el campo proveedor debe ser quien EMITE la factura. Responde solo con este JSON: {"proveedor": "nombre", "fecha": "YYYY-MM-DD", "valor": 0, "descripcion": "texto", "tipo": "Factura de Compra o Factura de Venta", "iva": 0}`
+                text: `Analiza este documento contable colombiano y extrae los datos en formato JSON.
+
+REGLAS PARA "proveedor":
+- Si es Factura de Venta: proveedor = quien RECIBE la factura (cliente, aparece como "Facturado a")
+- Si es Factura de Compra: proveedor = quien EMITE la factura (el vendedor)
+
+REGLAS PARA "categoria" - elige UNA de estas opciones:
+- "Factura de Venta": si tu empresa emite la factura y cobra a un cliente
+- "Factura de Compra": si tu empresa recibe una factura de un proveedor por bienes o servicios
+- "Gasto": servicios publicos, arriendo, internet, telefono, seguros, mantenimiento
+- "Nomina": pagos de salarios, prestaciones, seguridad social
+- "Extracto Bancario": documentos de banco, movimientos de cuenta
+- "Documento Tributario": declaraciones de impuestos, retenciones, ICA, IVA
+
+REGLAS PARA "tipo":
+- "Factura de Venta" o "Factura de Compra" segun corresponda
+
+Responde SOLO con este JSON sin texto adicional:
+{"proveedor": "nombre", "fecha": "YYYY-MM-DD", "valor": 0, "descripcion": "texto", "tipo": "Factura de Compra o Factura de Venta", "iva": 0, "categoria": "categoria elegida"}`
               }
             ]
           }
