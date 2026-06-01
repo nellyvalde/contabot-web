@@ -40,25 +40,7 @@ export async function POST(request: NextRequest) {
               contentBlock,
               {
                 type: 'text',
-                text: `Analiza esta factura electrónica colombiana.
-
-Analiza esta factura electrónica colombiana.
-
-REGLAS IMPORTANTES:
-- Si es "Factura de Venta": el campo "proveedor" debe ser quien RECIBE la factura (el cliente, aparece como "Facturado a" o "Cliente")
-- Si es "Factura de Compra": el campo "proveedor" debe ser quien EMITE la factura (el vendedor)
-- El "tipo" se determina desde la perspectiva del emisor del documento
-
-Extrae los datos en formato JSON exactamente así:
-{
-  "proveedor": "en ventas=cliente que recibe, en compras=empresa que vende",
-  "fecha": "fecha de expedición en formato YYYY-MM-DD",
-  "valor": 0,
-  "descripcion": "descripción del producto o servicio",
-  "tipo": "Factura de Compra o Factura de Venta",
-  "iva": 0
-}
-Solo responde con el JSON, sin texto adicional.
+                text: `Analiza esta factura electronica colombiana. REGLAS: Si es Factura de Venta el campo proveedor debe ser quien RECIBE la factura (el cliente, aparece como Facturado a). Si es Factura de Compra el campo proveedor debe ser quien EMITE la factura. Responde solo con este JSON: {"proveedor": "nombre", "fecha": "YYYY-MM-DD", "valor": 0, "descripcion": "texto", "tipo": "Factura de Compra o Factura de Venta", "iva": 0}`
               }
             ]
           }
