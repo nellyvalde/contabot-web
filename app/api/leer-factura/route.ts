@@ -51,7 +51,8 @@ Solo responde con el JSON, sin texto adicional.`
     const datos = JSON.parse(texto)
     
     return NextResponse.json({ success: true, datos })
-  } catch (error) {
-    return NextResponse.json({ error: 'Error procesando la factura' }, { status: 500 })
+ } catch (error) {
+    console.error('ERROR CONTABOT:', error)
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
-}
