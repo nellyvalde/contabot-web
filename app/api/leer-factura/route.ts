@@ -40,10 +40,18 @@ export async function POST(request: NextRequest) {
               contentBlock,
               {
                 type: 'text',
-                text: `Analiza esta factura y extrae los datos en formato JSON exactamente así:
+                text: `Analiza esta factura electrónica colombiana.
+
+REGLAS IMPORTANTES:
+- "proveedor" = quien EMITE o VENDE (aparece como vendedor, razón social del emisor, o en el encabezado de la factura)
+- El cliente es quien RECIBE la factura (aparece como "Facturado a") — NO es el proveedor
+- Si es una "Factura de Venta", el proveedor es quien emite la factura
+- Si es una "Factura de Compra", el proveedor es quien te vendió a ti
+
+Extrae los datos en formato JSON exactamente así:
 {
-  "proveedor": "nombre del proveedor o empresa",
-  "fecha": "fecha en formato YYYY-MM-DD",
+  "proveedor": "nombre de quien EMITE la factura (el vendedor)",
+  "fecha": "fecha de expedición en formato YYYY-MM-DD",
   "valor": 0,
   "descripcion": "descripción del producto o servicio",
   "tipo": "Factura de Compra o Factura de Venta",
