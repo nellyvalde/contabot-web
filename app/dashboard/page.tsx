@@ -67,3 +67,8 @@ export default function Dashboard() {
   }
 
   const hand
+  </div>
+      </div>
+    </main>
+  )
+}
