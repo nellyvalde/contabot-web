@@ -410,7 +410,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* CUENTAS POR PAGAR */}
+      {/* CUENTAS POR PAGAR */}
         {seccion === 'pagar' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Cuentas por Pagar</h2>
@@ -418,44 +418,94 @@ export default function Dashboard() {
               <p className="text-slate-500 text-sm">Total pendiente por pagar</p>
               <p className="text-3xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
             </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input
+                  type="text"
+                  placeholder="Buscar por proveedor..."
+                  value={filtroPagarProveedor}
+                  onChange={(e) => setFiltroPagarProveedor(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+                <select value={filtroPagarEstado} onChange={(e) => setFiltroPagarEstado(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+                  <option value="">Todos los estados</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Pagado">Pagado</option>
+                  <option value="Vencido">Vencido</option>
+                </select>
+                <input
+                  type="date"
+                  value={filtroPagarFecha}
+                  onChange={(e) => setFiltroPagarFecha(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+            </div>
+
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500 border-b">
-                    <th className="pb-2">Proveedor</th>
-                    <th className="pb-2">Fecha</th>
-                    <th className="pb-2">Valor</th>
-                    <th className="pb-2">Categoria</th>
-                    <th className="pb-2">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {facturas.filter(f => ['Factura de Compra', 'Gasto'].includes(f.categoria) && f.estado === 'Pendiente').map((f) => (
-                    <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
-                      <td className="py-3 font-medium">{f.proveedor}</td>
-                      <td className="py-3 text-slate-500">{f.fecha}</td>
-                      <td className="py-3 text-orange-600 font-medium">${f.valor?.toLocaleString()}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
-                          {f.categoria}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <select value={f.estado || 'Pendiente'} onChange={(e) => handleEstado(f.id, e.target.value)}
-                          className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
-                          <option value="Pendiente">Pendiente</option>
-                          <option value="Pagado">Pagado</option>
-                          <option value="Vencido">Vencido</option>
-                        </select>
-                      </td>
+              {facturasPagar.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay facturas que coincidan.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Proveedor</th>
+                      <th className="pb-2">No. Factura</th>
+                      <th className="pb-2">Fecha Factura</th>
+                      <th className="pb-2">Fecha Vencimiento</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Categoria</th>
+                      <th className="pb-2">Estado</th>
+                      <th className="pb-2">Dias Vencidos</th>
+                      <th className="pb-2"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {facturasPagar.map((f) => {
+                      const dias = diasVencidos(f.fecha_vencimiento, f.estado)
+                      return (
+                        <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                          <td className="py-3 font-medium">{f.proveedor}</td>
+                          <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                          <td className="py-3 text-slate-500">{f.fecha}</td>
+                          <td className="py-3 text-slate-500">{f.fecha_vencimiento || '-'}</td>
+                          <td className="py-3 text-orange-600 font-medium">${f.valor?.toLocaleString()}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
+                              {f.categoria}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                              {f.estado || 'Pendiente'}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            {dias > 0 ? (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">{dias} dias</span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Al dia</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {f.estado !== 'Pagado' && (
+                              <button onClick={() => setPagoModal(f)}
+                                className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1 rounded-lg">
+                                Registrar pago
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
-
         {/* PROXIMAS SECCIONES */}
         {['clientes', 'proveedores', 'reportes', 'configuracion'].includes(seccion) && (
           <div>
