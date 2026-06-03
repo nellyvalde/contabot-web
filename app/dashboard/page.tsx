@@ -18,16 +18,24 @@ const estadoConfig: Record<string, { color: string }> = {
 }
 
 const menuItems = [
-  { id: 'dashboard',    icon: '📊', label: 'Dashboard' },
-  { id: 'documentos',   icon: '📄', label: 'Documentos' },
-  { id: 'cobrar',       icon: '💰', label: 'Cuentas por Cobrar' },
-  { id: 'pagar',        icon: '💳', label: 'Cuentas por Pagar' },
-  { id: 'revision',     icon: '🤖', label: 'Revision IA' },
-  { id: 'clientes',     icon: '👥', label: 'Clientes' },
-  { id: 'proveedores',  icon: '🏭', label: 'Proveedores' },
-  { id: 'reportes',     icon: '📈', label: 'Reportes' },
-  { id: 'configuracion',icon: '⚙️', label: 'Configuracion' },
+  { id: 'dashboard',     icon: '📊', label: 'Dashboard' },
+  { id: 'documentos',    icon: '📄', label: 'Documentos' },
+  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar' },
+  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar' },
+  { id: 'revision',      icon: '🤖', label: 'Revision IA' },
+  { id: 'clientes',      icon: '👥', label: 'Clientes' },
+  { id: 'proveedores',   icon: '🏭', label: 'Proveedores' },
+  { id: 'reportes',      icon: '📈', label: 'Reportes' },
+  { id: 'configuracion', icon: '⚙️', label: 'Configuracion' },
 ]
+
+function diasVencidos(fechaVencimiento: string | null, estado: string) {
+  if (!fechaVencimiento || estado === 'Pagado') return 0
+  const hoy = new Date()
+  const vence = new Date(fechaVencimiento)
+  const diff = Math.floor((hoy.getTime() - vence.getTime()) / (1000 * 60 * 60 * 24))
+  return diff > 0 ? diff : 0
+}
 
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
@@ -37,6 +45,10 @@ export default function Dashboard() {
   const [datosFact, setDatosFact] = useState<any>(null)
   const [facturas, setFacturas] = useState<any[]>([])
   const [seccion, setSeccion] = useState('dashboard')
+  const [filtroCobrarCliente, setFiltroCobrarCliente] = useState('')
+  const [filtroCobrarEstado, setFiltroCobrarEstado] = useState('')
+  const [filtroCobrarFecha, setFiltroCobrarFecha] = useState('')
+  const [pagoModal, setPagoModal] = useState<any>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -120,10 +132,25 @@ export default function Dashboard() {
     setGuardando(false)
   }
 
+  const handleRegistrarPago = async () => {
+    if (!pagoModal) return
+    await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
+    setPagoModal(null)
+    cargarFacturas(user.id)
+  }
+
   const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
   const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorCobrar = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorPagar = facturas.filter(f => ['Factura de Compra', 'Gasto'].includes(f.categoria) && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
+
+  const facturasCobrar = facturas.filter(f => {
+    if (f.categoria !== 'Factura de Venta') return false
+    if (filtroCobrarCliente && !f.proveedor?.toLowerCase().includes(filtroCobrarCliente.toLowerCase())) return false
+    if (filtroCobrarEstado && f.estado !== filtroCobrarEstado) return false
+    if (filtroCobrarFecha && f.fecha < filtroCobrarFecha) return false
+    return true
+  })
 
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -133,7 +160,6 @@ export default function Dashboard() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Menu lateral */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col fixed h-full z-10">
         <div className="px-6 py-5 border-b border-slate-700">
           <div className="flex items-center gap-3">
@@ -144,32 +170,23 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-
         <nav className="flex-1 px-3 py-4 space-y-1">
           {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setSeccion(item.id)}
+            <button key={item.id} onClick={() => setSeccion(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
-                seccion === item.id
-                  ? 'bg-emerald-500 text-white font-medium'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
+                seccion === item.id ? 'bg-emerald-500 text-white font-medium' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}>
               <span>{item.icon}</span>
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
-
         <div className="px-4 py-4 border-t border-slate-700">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-xs">
               {user.email?.[0]?.toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-white truncate">{user.email}</p>
-            </div>
+            <p className="text-xs text-white truncate flex-1">{user.email}</p>
           </div>
           <button onClick={handleLogout} className="w-full text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
             Cerrar sesion
@@ -177,7 +194,6 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* Contenido principal */}
       <main className="flex-1 ml-64 p-8">
 
         {/* DASHBOARD */}
@@ -201,12 +217,12 @@ export default function Dashboard() {
                 <p className="text-slate-500 text-sm">Documentos</p>
                 <p className="text-2xl font-bold text-yellow-600 mt-1">{facturas.length}</p>
               </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-green-400">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-green-400 cursor-pointer hover:shadow-md" onClick={() => setSeccion('cobrar')}>
                 <p className="text-slate-500 text-sm">Cuentas por Cobrar</p>
                 <p className="text-xs text-slate-400 mb-1">Facturas de Venta pendientes</p>
                 <p className="text-2xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
               </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-orange-400">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-orange-400 cursor-pointer hover:shadow-md" onClick={() => setSeccion('pagar')}>
                 <p className="text-slate-500 text-sm">Cuentas por Pagar</p>
                 <p className="text-xs text-slate-400 mb-1">Compras y Gastos pendientes</p>
                 <p className="text-2xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
@@ -218,10 +234,7 @@ export default function Dashboard() {
         {/* DOCUMENTOS */}
         {(seccion === 'documentos' || seccion === 'revision') && (
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-6">
-              {seccion === 'revision' ? 'Revision IA' : 'Documentos'}
-            </h2>
-
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">{seccion === 'revision' ? 'Revision IA' : 'Documentos'}</h2>
             <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
               <h3 className="text-lg font-semibold text-slate-800 mb-4">Subir Documento</h3>
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
@@ -233,13 +246,7 @@ export default function Dashboard() {
                   <input type="file" accept="image/*,application/pdf" onChange={handleArchivo} className="hidden" disabled={loading} />
                 </label>
               </div>
-
-              {mensaje && (
-                <div className="mt-4 p-4 bg-slate-50 rounded-xl">
-                  <p className="text-slate-700">{mensaje}</p>
-                </div>
-              )}
-
+              {mensaje && <div className="mt-4 p-4 bg-slate-50 rounded-xl"><p className="text-slate-700">{mensaje}</p></div>}
               {datosFact && (
                 <div className="mt-4 p-6 bg-emerald-50 rounded-xl border border-emerald-200">
                   <div className="flex items-center justify-between mb-3">
@@ -265,14 +272,10 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-slate-800 mb-4">Documentos recientes</h3>
               {facturas.length === 0 ? (
-                <div className="text-center py-10 text-slate-400">
-                  <p className="text-4xl mb-3">📭</p>
-                  <p>No hay documentos aun.</p>
-                </div>
+                <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay documentos aun.</p></div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
@@ -297,20 +300,15 @@ export default function Dashboard() {
                           </span>
                         </td>
                         <td className="py-3">
-                          <select
-                            value={f.estado || 'Pendiente'}
-                            onChange={(e) => handleEstado(f.id, e.target.value)}
-                            className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}
-                          >
+                          <select value={f.estado || 'Pendiente'} onChange={(e) => handleEstado(f.id, e.target.value)}
+                            className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
                             <option value="Pendiente">Pendiente</option>
                             <option value="Pagado">Pagado</option>
                             <option value="Vencido">Vencido</option>
                           </select>
                         </td>
                         <td className="py-3">
-                          <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">
-                            Eliminar
-                          </button>
+                          <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">Eliminar</button>
                         </td>
                       </tr>
                     ))}
@@ -329,37 +327,85 @@ export default function Dashboard() {
               <p className="text-slate-500 text-sm">Total pendiente por cobrar</p>
               <p className="text-3xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
             </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input
+                  type="text"
+                  placeholder="Buscar por cliente..."
+                  value={filtroCobrarCliente}
+                  onChange={(e) => setFiltroCobrarCliente(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <select value={filtroCobrarEstado} onChange={(e) => setFiltroCobrarEstado(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="">Todos los estados</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Pagado">Pagado</option>
+                  <option value="Vencido">Vencido</option>
+                </select>
+                <input
+                  type="date"
+                  value={filtroCobrarFecha}
+                  onChange={(e) => setFiltroCobrarFecha(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500 border-b">
-                    <th className="pb-2">Cliente</th>
-                    <th className="pb-2">Fecha</th>
-                    <th className="pb-2">Valor</th>
-                    <th className="pb-2">Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').map((f) => (
-                    <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
-                      <td className="py-3 font-medium">{f.proveedor}</td>
-                      <td className="py-3 text-slate-500">{f.fecha}</td>
-                      <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
-                      <td className="py-3">
-                        <select
-                          value={f.estado || 'Pendiente'}
-                          onChange={(e) => handleEstado(f.id, e.target.value)}
-                          className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}
-                        >
-                          <option value="Pendiente">Pendiente</option>
-                          <option value="Pagado">Pagado</option>
-                          <option value="Vencido">Vencido</option>
-                        </select>
-                      </td>
+              {facturasCobrar.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay facturas que coincidan.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Cliente</th>
+                      <th className="pb-2">No. Factura</th>
+                      <th className="pb-2">Fecha Factura</th>
+                      <th className="pb-2">Fecha Vencimiento</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Estado</th>
+                      <th className="pb-2">Dias Vencidos</th>
+                      <th className="pb-2"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {facturasCobrar.map((f) => {
+                      const dias = diasVencidos(f.fecha_vencimiento, f.estado)
+                      return (
+                        <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                          <td className="py-3 font-medium">{f.proveedor}</td>
+                          <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                          <td className="py-3 text-slate-500">{f.fecha}</td>
+                          <td className="py-3 text-slate-500">{f.fecha_vencimiento || '-'}</td>
+                          <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                              {f.estado || 'Pendiente'}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            {dias > 0 ? (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">{dias} dias</span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Al dia</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {f.estado !== 'Pagado' && (
+                              <button onClick={() => setPagoModal(f)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded-lg">
+                                Registrar pago
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
@@ -395,11 +441,8 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="py-3">
-                        <select
-                          value={f.estado || 'Pendiente'}
-                          onChange={(e) => handleEstado(f.id, e.target.value)}
-                          className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}
-                        >
+                        <select value={f.estado || 'Pendiente'} onChange={(e) => handleEstado(f.id, e.target.value)}
+                          className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
                           <option value="Pendiente">Pendiente</option>
                           <option value="Pagado">Pagado</option>
                           <option value="Vencido">Vencido</option>
@@ -426,6 +469,41 @@ export default function Dashboard() {
         )}
 
       </main>
+
+      {/* MODAL REGISTRAR PAGO */}
+      {pagoModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Registrar Pago</h3>
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between">
+                <span className="text-slate-500 text-sm">Cliente</span>
+                <span className="font-medium text-sm">{pagoModal.proveedor}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 text-sm">Valor</span>
+                <span className="font-bold text-emerald-600">${pagoModal.valor?.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 text-sm">Fecha factura</span>
+                <span className="text-sm">{pagoModal.fecha}</span>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-6">Al confirmar, el estado cambiara a <strong>Pagado</strong>.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setPagoModal(null)}
+                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button onClick={handleRegistrarPago}
+                className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-medium">
+                Confirmar pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
