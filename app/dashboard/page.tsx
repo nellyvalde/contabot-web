@@ -133,8 +133,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
             <p className="text-slate-500 text-sm">Ingresos del mes</p>
             <p className="text-2xl font-bold text-emerald-600 mt-1">${totalIngresos.toLocaleString()}</p>
@@ -143,13 +142,23 @@ export default function Dashboard() {
             <p className="text-slate-500 text-sm">Gastos del mes</p>
             <p className="text-2xl font-bold text-red-600 mt-1">${totalGastos.toLocaleString()}</p>
           </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500">
+            <p className="text-slate-500 text-sm">Caja disponible</p>
+            <p className="text-2xl font-bold text-blue-600 mt-1">${(totalIngresos - totalGastos).toLocaleString()}</p>
+          </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-yellow-500">
             <p className="text-slate-500 text-sm">Documentos</p>
             <p className="text-2xl font-bold text-yellow-600 mt-1">{facturas.length}</p>
           </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500">
-            <p className="text-slate-500 text-sm">Caja disponible</p>
-            <p className="text-2xl font-bold text-blue-600 mt-1">${(totalIngresos - totalGastos).toLocaleString()}</p>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-green-400">
+            <p className="text-slate-500 text-sm">Cuentas por Cobrar</p>
+            <p className="text-xs text-slate-400 mb-1">Facturas de Venta pendientes</p>
+            <p className="text-2xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-orange-400">
+            <p className="text-slate-500 text-sm">Cuentas por Pagar</p>
+            <p className="text-xs text-slate-400 mb-1">Compras y Gastos pendientes</p>
+            <p className="text-2xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
           </div>
         </div>
 
