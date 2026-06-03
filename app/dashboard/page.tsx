@@ -47,7 +47,7 @@ export default function Dashboard() {
     const file = e.target.files?.[0]
     if (!file) return
     setLoading(true)
-    setMensaje('🤖 La IA está leyendo y clasificando tu documento...')
+    setMensaje('La IA esta leyendo y clasificando tu documento...')
     setDatosFact(null)
     const formData = new FormData()
     formData.append('file', file)
@@ -56,19 +56,64 @@ export default function Dashboard() {
       const data = await res.json()
       if (data.success) {
         setDatosFact(data.datos)
-        setMensaje('✅ Documento leído y clasificado correctamente')
+        setMensaje('Documento leido y clasificado correctamente')
       } else {
-        setMensaje('❌ Error: ' + data.error)
+        setMensaje('Error: ' + data.error)
       }
     } catch {
-      setMensaje('❌ Error procesando el archivo')
+      setMensaje('Error procesando el archivo')
     }
     setLoading(false)
   }
 
-  const hand
-  </div>
-      </div>
-    </main>
+  const handleEliminar = async (id: string) => {
+    if (!confirm('Seguro que deseas eliminar este documento?')) return
+    await supabase.from('facturas').delete().eq('id', id)
+    cargarFacturas(user.id)
+  }
+
+  const handleGuardar = async () => {
+    if (!datosFact || !user) return
+    setGuardando(true)
+    const { error } = await supabase.from('facturas').insert({
+      user_id: user.id,
+      proveedor: datosFact.proveedor,
+      fecha: datosFact.fecha,
+      valor: datosFact.valor,
+      iva: datosFact.iva,
+      descripcion: datosFact.descripcion,
+      tipo: datosFact.tipo,
+      categoria: datosFact.categoria,
+    })
+    if (error) {
+      setMensaje('Error guardando: ' + error.message)
+    } else {
+      setMensaje('Documento guardado correctamente')
+      setDatosFact(null)
+      cargarFacturas(user.id)
+    }
+    setGuardando(false)
+  }
+
+  const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
+  const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
+
+  if (!user) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <p className="text-white">Cargando...</p>
+    </div>
   )
-}
+
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <header className="bg-slate-800 text-white px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📊</span>
+          <h1 className="text-xl font-bold">ContaBot</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-slate-300 text-sm">{user.email}</span>
+          <button onClick={handleLogout} className="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded-lg text-sm">
+            Cerrar sesion
+          </button>
+        </div>
