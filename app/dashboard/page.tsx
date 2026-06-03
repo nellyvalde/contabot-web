@@ -117,3 +117,113 @@ export default function Dashboard() {
             Cerrar sesion
           </button>
         </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
+            <p className="text-slate-500 text-sm">Ingresos del mes</p>
+            <p className="text-2xl font-bold text-emerald-600 mt-1">${totalIngresos.toLocaleString()}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
+            <p className="text-slate-500 text-sm">Gastos del mes</p>
+            <p className="text-2xl font-bold text-red-600 mt-1">${totalGastos.toLocaleString()}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-yellow-500">
+            <p className="text-slate-500 text-sm">Documentos</p>
+            <p className="text-2xl font-bold text-yellow-600 mt-1">{facturas.length}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500">
+            <p className="text-slate-500 text-sm">Caja disponible</p>
+            <p className="text-2xl font-bold text-blue-600 mt-1">${(totalIngresos - totalGastos).toLocaleString()}</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+          <h2 className="text-lg font-semibold text-slate-800 mb-4">Subir Documento</h2>
+          <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
+            <p className="text-4xl mb-3">📁</p>
+            <p className="text-slate-600 mb-2">Selecciona tu documento - La IA lo leera y clasificara automaticamente</p>
+            <p className="text-slate-400 text-sm mb-4">JPG, PNG, PDF - maximo 5MB</p>
+            <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl transition-colors">
+              {loading ? 'Procesando...' : 'Seleccionar archivo'}
+              <input type="file" accept="image/*,application/pdf" onChange={handleArchivo} className="hidden" disabled={loading} />
+            </label>
+          </div>
+
+          {mensaje && (
+            <div className="mt-4 p-4 bg-slate-50 rounded-xl">
+              <p className="text-slate-700">{mensaje}</p>
+            </div>
+          )}
+
+          {datosFact && (
+            <div className="mt-4 p-6 bg-emerald-50 rounded-xl border border-emerald-200">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-emerald-800">Datos extraidos por IA:</h3>
+                {datosFact.categoria && (
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${categoriaConfig[datosFact.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
+                    {datosFact.categoria}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><p className="text-xs text-slate-500">Cliente/Proveedor</p><p className="font-medium">{datosFact.proveedor}</p></div>
+                <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium">{datosFact.fecha}</p></div>
+                <div><p className="text-xs text-slate-500">Valor</p><p className="font-medium text-emerald-700">${datosFact.valor?.toLocaleString()}</p></div>
+                <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium">${datosFact.iva?.toLocaleString()}</p></div>
+                <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium">{datosFact.descripcion}</p></div>
+                <div><p className="text-xs text-slate-500">Tipo</p><p className="font-medium">{datosFact.tipo}</p></div>
+              </div>
+              <button onClick={handleGuardar} disabled={guardando}
+                className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
+                {guardando ? 'Guardando...' : 'Guardar en ContaBot'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-800 mb-4">Documentos recientes</h2>
+          {facturas.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <p className="text-4xl mb-3">📭</p>
+              <p>No hay documentos aun. Sube tu primer documento.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 border-b">
+                  <th className="pb-2">Cliente/Proveedor</th>
+                  <th className="pb-2">Fecha</th>
+                  <th className="pb-2">Valor</th>
+                  <th className="pb-2">Categoria</th>
+                  <th className="pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {facturas.map((f) => (
+                  <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                    <td className="py-3 font-medium">{f.proveedor}</td>
+                    <td className="py-3 text-slate-500">{f.fecha}</td>
+                    <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                    <td className="py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
+                        {f.categoria || f.tipo}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </main>
+  )
+}
