@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File
     if (!file) {
-      return NextResponse.json({ error: 'No se recibió archivo' }, { status: 400 })
+      return NextResponse.json({ error: 'No se recibio archivo' }, { status: 400 })
     }
     const bytes = await file.arrayBuffer()
     const base64 = Buffer.from(bytes).toString('base64')
@@ -29,7 +29,24 @@ export async function POST(request: NextRequest) {
             contentBlock,
             {
               type: 'text',
-              text: `Analiza este documento contable colombiano. REGLAS: Si es Factura de Venta el campo proveedor = quien RECIBE (cliente, "Facturado a"). Si es Factura de Compra el campo proveedor = quien EMITE (vendedor). Para categoria elige una de: Factura de Venta, Factura de Compra, Gasto, Nomina, Extracto Bancario, Documento Tributario. Responde SOLO con este JSON: {"proveedor":"nombre","fecha":"YYYY-MM-DD","valor":0,"descripcion":"texto","tipo":"Factura de Compra o Factura de Venta","iva":0,"categoria":"categoria elegida"}`
+              text: `Analiza este documento contable colombiano y extrae los datos.
+
+REGLAS PARA categoria:
+- "Factura de Venta": cuando TU empresa emite la factura y cobra a un cliente
+- "Factura de Compra": cuando tu empresa compra bienes o mercancia a un proveedor
+- "Gasto": servicios publicos (agua, luz, gas, alcanos, codensa, epm), telefonia, internet, arriendo, combustible, seguros, mantenimiento, vigilancia, aseo, papeleria, honorarios, gastos administrativos. IMPORTANTE: si el documento es de una empresa de servicios publicos o administrativos clasifica como Gasto aunque diga factura
+
+REGLAS PARA proveedor:
+- Si es Factura de Venta: proveedor = quien RECIBE (cliente, aparece como Facturado a)
+- Si es Factura de Compra o Gasto: proveedor = quien EMITE la factura
+
+REGLAS PARA tipo:
+- Si categoria es Factura de Venta: tipo = "Factura de Venta"
+- Si categoria es Factura de Compra: tipo = "Factura de Compra"
+- Si categoria es Gasto: tipo = "Factura de Compra"
+
+Responde SOLO con este JSON sin texto adicional:
+{"proveedor":"nombre","fecha":"YYYY-MM-DD","valor":0,"descripcion":"texto","tipo":"Factura de Compra o Factura de Venta","iva":0,"categoria":"Factura de Venta o Factura de Compra o Gasto"}`
             }
           ]
         }]
