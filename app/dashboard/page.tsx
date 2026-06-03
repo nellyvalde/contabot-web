@@ -2,14 +2,21 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const categoriaConfig: Record<string, { color: string, emoji: string }> = {
-  'Factura de Venta':     { color: 'bg-green-100 text-green-700',   emoji: '🟢' },
-  'Factura de Compra':    { color: 'bg-blue-100 text-blue-700',     emoji: '🔵' },
-  'Gasto':                { color: 'bg-orange-100 text-orange-700', emoji: '🟠' },
-  'Nomina':               { color: 'bg-blue-100 text-blue-700',     emoji: '🔵' },
-  'Extracto Bancario':    { color: 'bg-purple-100 text-purple-700', emoji: '🟣' },
-  'Documento Tributario': { color: 'bg-orange-100 text-orange-700', emoji: '🟠' },
+const categoriaConfig: Record<string, { color: string }> = {
+  'Factura de Venta':     { color: 'bg-green-100 text-green-700' },
+  'Factura de Compra':    { color: 'bg-blue-100 text-blue-700' },
+  'Gasto':                { color: 'bg-orange-100 text-orange-700' },
+  'Nomina':               { color: 'bg-blue-100 text-blue-700' },
+  'Extracto Bancario':    { color: 'bg-purple-100 text-purple-700' },
+  'Documento Tributario': { color: 'bg-orange-100 text-orange-700' },
 }
+
+const estadoConfig: Record<string, { color: string }> = {
+  'Pendiente': { color: 'bg-yellow-100 text-yellow-700' },
+  'Pagado':    { color: 'bg-green-100 text-green-700' },
+  'Vencido':   { color: 'bg-red-100 text-red-700' },
+}
+
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -71,6 +78,11 @@ export default function Dashboard() {
     cargarFacturas(user.id)
   }
 
+  const handleEstado = async (id: string, nuevoEstado: string) => {
+    await supabase.from('facturas').update({ estado: nuevoEstado }).eq('id', id)
+    cargarFacturas(user.id)
+  }
+
   const handleGuardar = async () => {
     if (!datosFact || !user) return
     setGuardando(true)
@@ -83,6 +95,7 @@ export default function Dashboard() {
       descripcion: datosFact.descripcion,
       tipo: datosFact.tipo,
       categoria: datosFact.categoria,
+      estado: 'Pendiente',
     })
     if (error) {
       setMensaje('Error guardando: ' + error.message)
@@ -197,6 +210,7 @@ export default function Dashboard() {
                   <th className="pb-2">Fecha</th>
                   <th className="pb-2">Valor</th>
                   <th className="pb-2">Categoria</th>
+                  <th className="pb-2">Estado</th>
                   <th className="pb-2"></th>
                 </tr>
               </thead>
@@ -210,6 +224,17 @@ export default function Dashboard() {
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
                         {f.categoria || f.tipo}
                       </span>
+                    </td>
+                    <td className="py-3">
+                      <select
+                        value={f.estado || 'Pendiente'}
+                        onChange={(e) => handleEstado(f.id, e.target.value)}
+                        className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}
+                      >
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="Pagado">Pagado</option>
+                        <option value="Vencido">Vencido</option>
+                      </select>
                     </td>
                     <td className="py-3">
                       <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">
