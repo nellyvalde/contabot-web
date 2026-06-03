@@ -133,7 +133,8 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
             <p className="text-slate-500 text-sm">Ingresos del mes</p>
             <p className="text-2xl font-bold text-emerald-600 mt-1">${totalIngresos.toLocaleString()}</p>
@@ -206,59 +207,4 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">Documentos recientes</h2>
-          {facturas.length === 0 ? (
-            <div className="text-center py-10 text-slate-400">
-              <p className="text-4xl mb-3">📭</p>
-              <p>No hay documentos aun. Sube tu primer documento.</p>
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b">
-                  <th className="pb-2">Cliente/Proveedor</th>
-                  <th className="pb-2">Fecha</th>
-                  <th className="pb-2">Valor</th>
-                  <th className="pb-2">Categoria</th>
-                  <th className="pb-2">Estado</th>
-                  <th className="pb-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {facturas.map((f) => (
-                  <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
-                    <td className="py-3 font-medium">{f.proveedor}</td>
-                    <td className="py-3 text-slate-500">{f.fecha}</td>
-                    <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
-                    <td className="py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
-                        {f.categoria || f.tipo}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <select
-                        value={f.estado || 'Pendiente'}
-                        onChange={(e) => handleEstado(f.id, e.target.value)}
-                        className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}
-                      >
-                        <option value="Pendiente">Pendiente</option>
-                        <option value="Pagado">Pagado</option>
-                        <option value="Vencido">Vencido</option>
-                      </select>
-                    </td>
-                    <td className="py-3">
-                      <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    </main>
-  )
-}
+        <div className="bg-white rounded-2xl p-6 shad
