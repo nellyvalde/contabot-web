@@ -410,7 +410,7 @@ export default function Dashboard() {
           </div>
         )}
 
-      {/* CUENTAS POR PAGAR */}
+{/* CUENTAS POR PAGAR */}
         {seccion === 'pagar' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Cuentas por Pagar</h2>
