@@ -399,12 +399,12 @@ const facturasFiltradas = facturas.filter(f => {
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><p className="text-xs text-slate-500">Cliente/Proveedor</p><p className="font-medium">{datosFact.proveedor}</p></div>
-                    <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium">{datosFact.fecha}</p></div>
+                    <div><p className="text-xs text-slate-500">Cliente/Proveedor</p><p className="font-medium text-slate-900">{datosFact.proveedor}</p></div>
+                    <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium text-slate-900">{datosFact.fecha}</p></div>
                     <div><p className="text-xs text-slate-500">Valor</p><p className="font-medium text-emerald-700">${datosFact.valor?.toLocaleString()}</p></div>
-                    <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium">${datosFact.iva?.toLocaleString()}</p></div>
-                    <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium">{datosFact.descripcion}</p></div>
-                    <div><p className="text-xs text-slate-500">Tipo</p><p className="font-medium">{datosFact.tipo}</p></div>
+                    <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium text-slate-900">${datosFact.iva?.toLocaleString()}</p></div>
+                    <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium text-slate-900">{datosFact.descripcion}</p></div>
+                    <div><p className="text-xs text-slate-500">Tipo</p><p className="font-medium text-slate-900">{datosFact.tipo}</p></div>
                   </div>
                   <button onClick={handleGuardar} disabled={guardando}
                     className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
