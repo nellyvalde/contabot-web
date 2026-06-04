@@ -362,6 +362,7 @@ export default function Dashboard() {
         {(seccion === 'documentos' || seccion === 'revision') && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">{seccion === 'revision' ? 'Revision IA' : 'Documentos'}</h2>
+
             <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
               <h3 className="text-lg font-semibold text-slate-800 mb-4">Subir Documento</h3>
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
@@ -399,33 +400,66 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">Documentos recientes</h3>
-              {facturas.length === 0 ? (
-                <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay documentos aun.</p></div>
+              <div className="flex flex-col md:flex-row gap-4 mb-6">
+                <input
+                  type="text"
+                  placeholder="Buscar por cliente, proveedor, NIT o numero de factura..."
+                  value={buscarDoc}
+                  onChange={(e) => setBuscarDoc(e.target.value)}
+                  className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mb-6">
+                {[
+                  { key: 'todos', label: 'Todos', count: facturas.length },
+                  { key: 'Factura de Venta', label: 'Ventas', count: facturas.filter(f => f.categoria === 'Factura de Venta').length },
+                  { key: 'Factura de Compra', label: 'Compras', count: facturas.filter(f => f.categoria === 'Factura de Compra').length },
+                  { key: 'Gasto', label: 'Gastos', count: facturas.filter(f => f.categoria === 'Gasto').length },
+                  { key: 'Pendiente', label: 'Pendientes', count: facturas.filter(f => f.estado === 'Pendiente').length },
+                  { key: 'Pagado', label: 'Pagados', count: facturas.filter(f => f.estado === 'Pagado').length },
+                  { key: 'Vencido', label: 'Vencidos', count: facturas.filter(f => f.estado === 'Vencido').length },
+                ].map((filtro) => (
+                  <button
+                    key={filtro.key}
+                    onClick={() => setFiltroDoc(filtro.key)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      filtroDoc === filtro.key
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {filtro.label} ({filtro.count})
+                  </button>
+                ))}
+              </div>
+
+              {facturasFiltradas.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay documentos que coincidan.</p></div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-slate-500 border-b">
-                      <th className="pb-2">Cliente/Proveedor</th>
                       <th className="pb-2">Fecha</th>
+                      <th className="pb-2">Cliente/Proveedor</th>
+                      <th className="pb-2">Tipo</th>
                       <th className="pb-2">Valor</th>
-                      <th className="pb-2">Categoria</th>
                       <th className="pb-2">Estado</th>
                       <th className="pb-2"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {facturas.map((f) => (
+                    {facturasFiltradas.map((f) => (
                       <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
-                        <td className="py-3 font-medium">{f.proveedor}</td>
                         <td className="py-3 text-slate-500">{f.fecha}</td>
-                        <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3 font-medium">{f.proveedor}</td>
                         <td className="py-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
                             {f.categoria || f.tipo}
                           </span>
                         </td>
+                        <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
                         <td className="py-3">
                           <select value={f.estado || 'Pendiente'} onChange={(e) => handleEstado(f.id, e.target.value)}
                             className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
