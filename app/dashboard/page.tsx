@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [filtroPagarProveedor, setFiltroPagarProveedor] = useState('')
   const [filtroPagarEstado, setFiltroPagarEstado] = useState('')
   const [filtroPagarFecha, setFiltroPagarFecha] = useState('')
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -154,7 +155,14 @@ export default function Dashboard() {
     if (filtroCobrarFecha && f.fecha < filtroCobrarFecha) return false
     return true
   })
-const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(null)
+
+  const facturasPagar = facturas.filter(f => {
+    if (!['Factura de Compra', 'Gasto'].includes(f.categoria)) return false
+    if (filtroPagarProveedor && !f.proveedor?.toLowerCase().includes(filtroPagarProveedor.toLowerCase())) return false
+    if (filtroPagarEstado && f.estado !== filtroPagarEstado) return false
+    if (filtroPagarFecha && f.fecha < filtroPagarFecha) return false
+    return true
+  })
 
   const clientesAgrupados = Object.values(
     facturas
@@ -162,14 +170,7 @@ const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(nu
       .reduce((acc: any, f) => {
         const nombre = f.proveedor || 'Sin nombre'
         if (!acc[nombre]) {
-          acc[nombre] = {
-            nombre,
-            cantidadFacturas: 0,
-            totalFacturado: 0,
-            totalPendiente: 0,
-            ultimaFactura: f.fecha,
-            facturas: [],
-          }
+          acc[nombre] = { nombre, cantidadFacturas: 0, totalFacturado: 0, totalPendiente: 0, ultimaFactura: f.fecha, facturas: [] }
         }
         acc[nombre].cantidadFacturas++
         acc[nombre].totalFacturado += f.valor || 0
@@ -179,13 +180,6 @@ const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(nu
         return acc
       }, {})
   ) as any[]
-  const facturasPagar = facturas.filter(f => {
-    if (!['Factura de Compra', 'Gasto'].includes(f.categoria)) return false
-    if (filtroPagarProveedor && !f.proveedor?.toLowerCase().includes(filtroPagarProveedor.toLowerCase())) return false
-    if (filtroPagarEstado && f.estado !== filtroPagarEstado) return false
-    if (filtroPagarFecha && f.fecha < filtroPagarFecha) return false
-    return true
-  })
 
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -518,10 +512,9 @@ const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(nu
           </div>
         )}
 
-       {seccion === 'clientes' && (
+        {seccion === 'clientes' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Clientes</h2>
-
             {!clienteSeleccionado ? (
               <div className="bg-white rounded-2xl p-6 shadow-sm">
                 <p className="text-slate-500 text-sm mb-4">Clientes generados automaticamente desde Facturas de Venta</p>
@@ -627,9 +620,9 @@ const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(nu
         )}
 
         {['proveedores', 'reportes', 'configuracion'].includes(seccion) && (
+          <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
             <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
-              <p className="text-5xl mb-4">🚧</p>
               <p className="text-lg font-medium">Modulo en construccion</p>
               <p className="text-sm mt-2">Esta seccion estara disponible proximamente</p>
             </div>
