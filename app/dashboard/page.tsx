@@ -811,7 +811,212 @@ export default function Dashboard() {
           </div>
         )}
 
-        {['proveedores', 'reportes', 'configuracion'].includes(seccion) && (
+     {seccion === 'proveedores' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Proveedores</h2>
+            {!proveedorSeleccionado ? (
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <p className="text-slate-500 text-sm mb-4">Proveedores generados automaticamente desde Facturas de Compra y Gastos</p>
+                {proveedoresAgrupados.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400">
+                    <p className="text-4xl mb-3">🏭</p>
+                    <p>No hay proveedores aun. Sube facturas de compra o gastos para verlos aqui.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b">
+                        <th className="pb-2">Proveedor</th>
+                        <th className="pb-2">Pendiente por Pagar</th>
+                        <th className="pb-2">Ultimo Documento</th>
+                        <th className="pb-2">Estado</th>
+                        <th className="pb-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {proveedoresAgrupados.map((p) => (
+                        <tr key={p.nombre} className="border-b last:border-0 hover:bg-slate-50">
+                          <td className="py-3 font-medium">{p.nombre}</td>
+                          <td className="py-3">
+                            <span className={`font-medium ${p.totalPendiente > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                              ${p.totalPendiente.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="py-3 text-slate-500">{p.ultimoDocumento}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.totalPendiente > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {p.totalPendiente > 0 ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            <button onClick={() => setProveedorSeleccionado(p.nombre)}
+                              className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
+                              Ver detalle
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ) : (
+              <div>
+                <button onClick={() => setProveedorSeleccionado(null)}
+                  className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-800 text-sm">
+                  &larr; Volver a Proveedores
+                </button>
+                {(() => {
+                  const p = proveedoresAgrupados.find(x => x.nombre === proveedorSeleccionado)
+                  if (!p) return null
+                  const totalPagado = p.documentos.filter((f: any) => f.estado === 'Pagado').reduce((a: number, b: any) => a + (b.valor || 0), 0)
+                  const docsPendientes = p.documentos.filter((f: any) => f.estado !== 'Pagado')
+                  const docsPagados = p.documentos.filter((f: any) => f.estado === 'Pagado')
+                  return (
+                    <div>
+                      <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4">Informacion General</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Razon Social</p>
+                            <p className="font-medium text-sm">{p.nombre}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">NIT</p>
+                            <p className="text-sm">{p.nit || '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Estado</p>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.totalPendiente > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {p.totalPendiente > 0 ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-slate-500">
+                          <p className="text-slate-500 text-xs">Total Comprado</p>
+                          <p className="text-xl font-bold text-slate-700 mt-1">${p.totalComprado.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-blue-500">
+                          <p className="text-slate-500 text-xs">Total Pagado</p>
+                          <p className="text-xl font-bold text-blue-600 mt-1">${totalPagado.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-orange-500">
+                          <p className="text-slate-500 text-xs">Pendiente por Pagar</p>
+                          <p className="text-xl font-bold text-orange-600 mt-1">${p.totalPendiente.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-slate-400">
+                          <p className="text-slate-500 text-xs">Total Documentos</p>
+                          <p className="text-xl font-bold text-slate-600 mt-1">{p.cantidadDocumentos}</p>
+                        </div>
+                      </div>
+
+                      {docsPendientes.length > 0 && (
+                        <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+                          <h3 className="text-lg font-semibold text-slate-800 mb-4">Documentos Pendientes</h3>
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-slate-500 border-b">
+                                <th className="pb-2">No. Documento</th>
+                                <th className="pb-2">Fecha</th>
+                                <th className="pb-2">Valor</th>
+                                <th className="pb-2">Dias Pendiente</th>
+                                <th className="pb-2">Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {docsPendientes.map((f: any) => (
+                                <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                  <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                                  <td className="py-3 text-slate-500">{f.fecha}</td>
+                                  <td className="py-3 text-orange-600 font-medium">${f.valor?.toLocaleString()}</td>
+                                  <td className="py-3">
+                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                                      {diasDesde(f.fecha)} dias
+                                    </span>
+                                  </td>
+                                  <td className="py-3">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                                      {f.estado || 'Pendiente'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {docsPagados.length > 0 && (
+                        <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+                          <h3 className="text-lg font-semibold text-slate-800 mb-4">Documentos Pagados</h3>
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-slate-500 border-b">
+                                <th className="pb-2">No. Documento</th>
+                                <th className="pb-2">Fecha</th>
+                                <th className="pb-2">Valor</th>
+                                <th className="pb-2">Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {docsPagados.map((f: any) => (
+                                <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                  <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                                  <td className="py-3 text-slate-500">{f.fecha}</td>
+                                  <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                                  <td className="py-3">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                                      {f.estado || 'Pendiente'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      <div className="bg-white rounded-2xl p-6 shadow-sm">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4">Historial Completo</h3>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-slate-500 border-b">
+                              <th className="pb-2">No. Documento</th>
+                              <th className="pb-2">Fecha</th>
+                              <th className="pb-2">Descripcion</th>
+                              <th className="pb-2">Valor</th>
+                              <th className="pb-2">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {p.documentos.map((f: any) => (
+                              <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                                <td className="py-3 text-slate-500">{f.fecha}</td>
+                                <td className="py-3">{f.descripcion}</td>
+                                <td className="py-3 font-medium text-slate-700">${f.valor?.toLocaleString()}</td>
+                                <td className="py-3">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                                    {f.estado || 'Pendiente'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
+        {['reportes', 'configuracion'].includes(seccion) && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
             <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
@@ -820,7 +1025,6 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-
       </main>
 
       {pagoModal && (
