@@ -73,7 +73,9 @@ export default function Dashboard() {
   const [editandoCliente, setEditandoCliente] = useState(false)
   const [datosEditCliente, setDatosEditCliente] = useState<any>({})
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
-
+const [filtroDoc, setFiltroDoc] = useState('todos')
+  const [buscarDoc, setBuscarDoc] = useState('')
+  
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) window.location.href = '/'
