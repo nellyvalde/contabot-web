@@ -53,6 +53,9 @@ export default function Dashboard() {
   const [filtroPagarEstado, setFiltroPagarEstado] = useState('')
   const [filtroPagarFecha, setFiltroPagarFecha] = useState('')
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(null)
+  const [clientesDB, setClientesDB] = useState<any[]>([])
+  const [editandoCliente, setEditandoCliente] = useState(false)
+  const [datosEditCliente, setDatosEditCliente] = useState<any>({})
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -60,6 +63,7 @@ export default function Dashboard() {
       else {
         setUser(data.user)
         cargarFacturas(data.user.id)
+        cargarClientesDB(data.user.id)
       }
     })
   }, [])
@@ -71,6 +75,11 @@ export default function Dashboard() {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
     if (data) setFacturas(data)
+  }
+
+  const cargarClientesDB = async (userId: string) => {
+    const { data } = await supabase.from('clientes').select('*').eq('user_id', userId)
+    if (data) setClientesDB(data)
   }
 
   const handleLogout = async () => {
@@ -143,6 +152,24 @@ export default function Dashboard() {
     cargarFacturas(user.id)
   }
 
+  const abrirCliente = (nombre: string) => {
+    const clienteDB = clientesDB.find((c: any) => c.nombre === nombre)
+    setDatosEditCliente(clienteDB || {})
+    setClienteSeleccionado(nombre)
+    setEditandoCliente(false)
+  }
+
+  const guardarCliente = async (nombre: string) => {
+    const clienteExistente = clientesDB.find((c: any) => c.nombre === nombre)
+    if (clienteExistente) {
+      await supabase.from('clientes').update(datosEditCliente).eq('id', clienteExistente.id)
+    } else {
+      await supabase.from('clientes').insert({ ...datosEditCliente, nombre, user_id: user.id })
+    }
+    setEditandoCliente(false)
+    cargarClientesDB(user.id)
+  }
+
   const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
   const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorCobrar = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
@@ -179,7 +206,10 @@ export default function Dashboard() {
         acc[nombre].facturas.push(f)
         return acc
       }, {})
-  ) as any[]
+  ).map((c: any) => {
+    const clienteDB = clientesDB.find((db: any) => db.nombre === c.nombre)
+    return { ...c, ...(clienteDB || {}) }
+  }) as any[]
 
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -512,10 +542,9 @@ export default function Dashboard() {
           </div>
         )}
 
-     {seccion === 'clientes' && (
+        {seccion === 'clientes' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Clientes</h2>
-
             {!clienteSeleccionado ? (
               <div className="bg-white rounded-2xl p-6 shadow-sm">
                 <p className="text-slate-500 text-sm mb-4">Clientes generados automaticamente desde Facturas de Venta</p>
@@ -551,7 +580,7 @@ export default function Dashboard() {
                             </span>
                           </td>
                           <td className="py-3">
-                            <button onClick={() => setClienteSeleccionado(c.nombre)}
+                            <button onClick={() => abrirCliente(c.nombre)}
                               className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
                               Ver detalle
                             </button>
@@ -578,32 +607,47 @@ export default function Dashboard() {
                     <div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div className="bg-white rounded-2xl p-6 shadow-sm">
-                          <h3 className="text-lg font-semibold text-slate-800 mb-4">Informacion del Cliente</h3>
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-slate-800">Informacion del Cliente</h3>
+                            {!editandoCliente ? (
+                              <button onClick={() => setEditandoCliente(true)}
+                                className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
+                                Editar
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button onClick={() => setEditandoCliente(false)}
+                                  className="border border-slate-200 text-slate-500 text-xs px-3 py-1 rounded-lg hover:bg-slate-50">
+                                  Cancelar
+                                </button>
+                                <button onClick={() => guardarCliente(c.nombre)}
+                                  className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded-lg">
+                                  Guardar
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           <div className="space-y-3">
-                            <div className="flex justify-between border-b pb-2">
+                            <div className="flex justify-between border-b pb-2 items-center">
                               <span className="text-slate-500 text-sm">Razon Social</span>
                               <span className="font-medium text-sm">{c.nombre}</span>
                             </div>
-                            <div className="flex justify-between border-b pb-2">
-                              <span className="text-slate-500 text-sm">NIT</span>
-                              <span className="text-sm">{c.nit || '-'}</span>
-                            </div>
-                            <div className="flex justify-between border-b pb-2">
-                              <span className="text-slate-500 text-sm">Correo</span>
-                              <span className="text-sm">{c.correo || '-'}</span>
-                            </div>
-                            <div className="flex justify-between border-b pb-2">
-                              <span className="text-slate-500 text-sm">Telefono</span>
-                              <span className="text-sm">{c.telefono || '-'}</span>
-                            </div>
-                            <div className="flex justify-between border-b pb-2">
-                              <span className="text-slate-500 text-sm">Direccion</span>
-                              <span className="text-sm">{c.direccion || '-'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-500 text-sm">Ciudad</span>
-                              <span className="text-sm">{c.ciudad || '-'}</span>
-                            </div>
+                            {['nit', 'correo', 'telefono', 'direccion', 'ciudad'].map((campo) => (
+                              <div key={campo} className="flex justify-between border-b pb-2 items-center">
+                                <span className="text-slate-500 text-sm capitalize">{campo}</span>
+                                {editandoCliente ? (
+                                  <input
+                                    type="text"
+                                    value={datosEditCliente[campo] || ''}
+                                    onChange={(e) => setDatosEditCliente((prev: any) => ({ ...prev, [campo]: e.target.value }))}
+                                    className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    placeholder={campo}
+                                  />
+                                ) : (
+                                  <span className="text-sm">{c[campo] || '-'}</span>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4 content-start">
@@ -691,7 +735,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        )}   
+        )}
 
         {['proveedores', 'reportes', 'configuracion'].includes(seccion) && (
           <div>
