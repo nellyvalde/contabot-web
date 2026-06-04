@@ -63,6 +63,7 @@ export default function Dashboard() {
   const [clientesDB, setClientesDB] = useState<any[]>([])
   const [editandoCliente, setEditandoCliente] = useState(false)
   const [datosEditCliente, setDatosEditCliente] = useState<any>({})
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -220,6 +221,23 @@ export default function Dashboard() {
     const estadoCartera = tieneVencidas ? 'Vencida' : tienePendientes ? 'Pendiente' : 'Al dia'
     return { ...c, ...(clienteDB || {}), estadoCartera }
   }) as any[]
+
+  const proveedoresAgrupados = Object.values(
+    facturas
+      .filter(f => ['Factura de Compra', 'Gasto'].includes(f.categoria))
+      .reduce((acc: any, f) => {
+        const nombre = f.proveedor || 'Sin nombre'
+        if (!acc[nombre]) {
+          acc[nombre] = { nombre, cantidadDocumentos: 0, totalComprado: 0, totalPendiente: 0, ultimoDocumento: f.fecha, documentos: [] }
+        }
+        acc[nombre].cantidadDocumentos++
+        acc[nombre].totalComprado += f.valor || 0
+        if (f.estado === 'Pendiente' || f.estado === 'Vencido') acc[nombre].totalPendiente += f.valor || 0
+        if (f.fecha > acc[nombre].ultimoDocumento) acc[nombre].ultimoDocumento = f.fecha
+        acc[nombre].documentos.push(f)
+        return acc
+      }, {})
+  ) as any[]
 
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -619,7 +637,6 @@ export default function Dashboard() {
                   const facturasPagadas = c.facturas.filter((f: any) => f.estado === 'Pagado')
                   return (
                     <div>
-                      {/* Informacion General */}
                       <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
                         <div className="flex items-center justify-between mb-4">
                           <h3 className="text-lg font-semibold text-slate-800">Informacion General</h3>
@@ -684,8 +701,6 @@ export default function Dashboard() {
                           )}
                         </div>
                       </div>
-
-                      {/* Resumen Financiero */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-emerald-500">
                           <p className="text-slate-500 text-xs">Total Facturado</p>
@@ -704,8 +719,6 @@ export default function Dashboard() {
                           <p className="text-xl font-bold text-slate-600 mt-1">{c.cantidadFacturas}</p>
                         </div>
                       </div>
-
-                      {/* Facturas Pendientes */}
                       {facturasPendientes.length > 0 && (
                         <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
                           <h3 className="text-lg font-semibold text-slate-800 mb-4">Facturas Pendientes</h3>
@@ -741,8 +754,6 @@ export default function Dashboard() {
                           </table>
                         </div>
                       )}
-
-                      {/* Facturas Pagadas */}
                       {facturasPagadas.length > 0 && (
                         <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
                           <h3 className="text-lg font-semibold text-slate-800 mb-4">Facturas Pagadas</h3>
@@ -772,8 +783,6 @@ export default function Dashboard() {
                           </table>
                         </div>
                       )}
-
-                      {/* Historial Completo */}
                       <div className="bg-white rounded-2xl p-6 shadow-sm">
                         <h3 className="text-lg font-semibold text-slate-800 mb-4">Historial Completo</h3>
                         <table className="w-full text-sm">
@@ -811,7 +820,7 @@ export default function Dashboard() {
           </div>
         )}
 
-     {seccion === 'proveedores' && (
+        {seccion === 'proveedores' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Proveedores</h2>
             {!proveedorSeleccionado ? (
@@ -893,7 +902,6 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </div>
-
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-slate-500">
                           <p className="text-slate-500 text-xs">Total Comprado</p>
@@ -912,7 +920,6 @@ export default function Dashboard() {
                           <p className="text-xl font-bold text-slate-600 mt-1">{p.cantidadDocumentos}</p>
                         </div>
                       </div>
-
                       {docsPendientes.length > 0 && (
                         <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
                           <h3 className="text-lg font-semibold text-slate-800 mb-4">Documentos Pendientes</h3>
@@ -948,7 +955,6 @@ export default function Dashboard() {
                           </table>
                         </div>
                       )}
-
                       {docsPagados.length > 0 && (
                         <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
                           <h3 className="text-lg font-semibold text-slate-800 mb-4">Documentos Pagados</h3>
@@ -978,7 +984,6 @@ export default function Dashboard() {
                           </table>
                         </div>
                       )}
-
                       <div className="bg-white rounded-2xl p-6 shadow-sm">
                         <h3 className="text-lg font-semibold text-slate-800 mb-4">Historial Completo</h3>
                         <table className="w-full text-sm">
@@ -1025,6 +1030,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
       </main>
 
       {pagoModal && (
