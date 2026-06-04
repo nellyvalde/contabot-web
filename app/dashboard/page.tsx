@@ -22,6 +22,7 @@ const menuItems = [
   { id: 'documentos',    icon: '📄', label: 'Documentos' },
   { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar' },
   { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar' },
+  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas' },
   { id: 'revision',      icon: '🤖', label: 'Revision IA' },
   { id: 'clientes',      icon: '👥', label: 'Clientes' },
   { id: 'proveedores',   icon: '🏭', label: 'Proveedores' },
@@ -42,6 +43,14 @@ function diasVencidos(fechaVencimiento: string | null, estado: string) {
   const vence = new Date(fechaVencimiento)
   const diff = Math.floor((hoy.getTime() - vence.getTime()) / (1000 * 60 * 60 * 24))
   return diff > 0 ? diff : 0
+}
+
+function diasParaVencer(fechaVencimiento: string | null) {
+  if (!fechaVencimiento) return null
+  const hoy = new Date()
+  const vence = new Date(fechaVencimiento)
+  const diff = Math.floor((vence.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+  return diff
 }
 
 export default function Dashboard() {
@@ -239,6 +248,26 @@ export default function Dashboard() {
       }, {})
   ) as any[]
 
+  // ALERTAS
+  const hoy = new Date()
+  const cobrarVencidas = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Vencido')
+  const cobrarProximas = facturas.filter(f => {
+    if (f.categoria !== 'Factura de Venta' || f.estado === 'Pagado') return false
+    const dias = diasParaVencer(f.fecha_vencimiento)
+    return dias !== null && dias >= 0 && dias <= 7
+  })
+  const pagarVencidas = facturas.filter(f => ['Factura de Compra', 'Gasto'].includes(f.categoria) && f.estado === 'Vencido')
+  const pagarProximas = facturas.filter(f => {
+    if (!['Factura de Compra', 'Gasto'].includes(f.categoria) || f.estado === 'Pagado') return false
+    const dias = diasParaVencer(f.fecha_vencimiento)
+    return dias !== null && dias >= 0 && dias <= 7
+  })
+  const docHoy = facturas.filter(f => {
+    const fechaDoc = new Date(f.created_at)
+    return fechaDoc.toDateString() === hoy.toDateString()
+  })
+  const totalAlertas = cobrarVencidas.length + cobrarProximas.length + pagarVencidas.length + pagarProximas.length
+
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <p className="text-white">Cargando...</p>
@@ -264,7 +293,10 @@ export default function Dashboard() {
                 seccion === item.id ? 'bg-emerald-500 text-white font-medium' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}>
               <span>{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="flex-1 text-left">{item.label}</span>
+              {item.id === 'alertas' && totalAlertas > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{totalAlertas}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -312,6 +344,16 @@ export default function Dashboard() {
                 <p className="text-slate-500 text-sm">Cuentas por Pagar</p>
                 <p className="text-xs text-slate-400 mb-1">Compras y Gastos pendientes</p>
                 <p className="text-2xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-400 cursor-pointer hover:shadow-md md:col-span-3" onClick={() => setSeccion('alertas')}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-slate-500 text-sm">Alertas Activas</p>
+                    <p className="text-xs text-slate-400 mb-1">Facturas vencidas y proximas a vencer</p>
+                    <p className="text-2xl font-bold text-red-600 mt-1">{totalAlertas} alertas pendientes</p>
+                  </div>
+                  <span className="text-4xl">⚠️</span>
+                </div>
               </div>
             </div>
           </div>
@@ -567,6 +609,194 @@ export default function Dashboard() {
                 </table>
               )}
             </div>
+          </div>
+        )}
+
+        {seccion === 'alertas' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Centro de Alertas</h2>
+            <p className="text-slate-500 text-sm mb-6">Seguimiento automatico generado por ContaBot</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-red-50 rounded-2xl p-5 border border-red-200">
+                <p className="text-red-600 text-xs font-medium">Cobros Vencidos</p>
+                <p className="text-2xl font-bold text-red-700 mt-1">{cobrarVencidas.length}</p>
+              </div>
+              <div className="bg-yellow-50 rounded-2xl p-5 border border-yellow-200">
+                <p className="text-yellow-600 text-xs font-medium">Cobros Proximos</p>
+                <p className="text-2xl font-bold text-yellow-700 mt-1">{cobrarProximas.length}</p>
+              </div>
+              <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200">
+                <p className="text-orange-600 text-xs font-medium">Pagos Vencidos</p>
+                <p className="text-2xl font-bold text-orange-700 mt-1">{pagarVencidas.length}</p>
+              </div>
+              <div className="bg-blue-50 rounded-2xl p-5 border border-blue-200">
+                <p className="text-blue-600 text-xs font-medium">Docs Hoy</p>
+                <p className="text-2xl font-bold text-blue-700 mt-1">{docHoy.length}</p>
+              </div>
+            </div>
+
+            {cobrarVencidas.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm mb-4 border-l-4 border-red-500">
+                <h3 className="text-lg font-semibold text-red-700 mb-4">Facturas de Venta Vencidas</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Cliente</th>
+                      <th className="pb-2">No. Factura</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Dias Vencido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cobrarVencidas.map((f) => (
+                      <tr key={f.id} className="border-b last:border-0 hover:bg-red-50">
+                        <td className="py-3 font-medium">{f.proveedor}</td>
+                        <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                        <td className="py-3 text-red-600 font-medium">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                            {diasDesde(f.fecha_vencimiento || f.fecha)} dias
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {cobrarProximas.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm mb-4 border-l-4 border-yellow-500">
+                <h3 className="text-lg font-semibold text-yellow-700 mb-4">Facturas de Venta Proximas a Vencer (7 dias)</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Cliente</th>
+                      <th className="pb-2">No. Factura</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Vence en</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cobrarProximas.map((f) => (
+                      <tr key={f.id} className="border-b last:border-0 hover:bg-yellow-50">
+                        <td className="py-3 font-medium">{f.proveedor}</td>
+                        <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                        <td className="py-3 text-yellow-600 font-medium">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                            {diasParaVencer(f.fecha_vencimiento)} dias
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {pagarVencidas.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm mb-4 border-l-4 border-orange-500">
+                <h3 className="text-lg font-semibold text-orange-700 mb-4">Facturas de Compra/Gastos Vencidos</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Proveedor</th>
+                      <th className="pb-2">No. Documento</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Dias Vencido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagarVencidas.map((f) => (
+                      <tr key={f.id} className="border-b last:border-0 hover:bg-orange-50">
+                        <td className="py-3 font-medium">{f.proveedor}</td>
+                        <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                        <td className="py-3 text-orange-600 font-medium">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                            {diasDesde(f.fecha_vencimiento || f.fecha)} dias
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {pagarProximas.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm mb-4 border-l-4 border-yellow-400">
+                <h3 className="text-lg font-semibold text-yellow-700 mb-4">Pagos Proximos a Vencer (7 dias)</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Proveedor</th>
+                      <th className="pb-2">No. Documento</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Vence en</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagarProximas.map((f) => (
+                      <tr key={f.id} className="border-b last:border-0 hover:bg-yellow-50">
+                        <td className="py-3 font-medium">{f.proveedor}</td>
+                        <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                        <td className="py-3 text-yellow-600 font-medium">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                            {diasParaVencer(f.fecha_vencimiento)} dias
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {docHoy.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm mb-4 border-l-4 border-blue-500">
+                <h3 className="text-lg font-semibold text-blue-700 mb-4">Documentos Procesados Hoy ({docHoy.length})</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Cliente/Proveedor</th>
+                      <th className="pb-2">Categoria</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {docHoy.map((f) => (
+                      <tr key={f.id} className="border-b last:border-0 hover:bg-blue-50">
+                        <td className="py-3 font-medium">{f.proveedor}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
+                            {f.categoria}
+                          </span>
+                        </td>
+                        <td className="py-3 font-medium text-slate-700">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                            {f.estado || 'Pendiente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {totalAlertas === 0 && docHoy.length === 0 && (
+              <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+                <p className="text-5xl mb-4">✅</p>
+                <p className="text-lg font-medium text-emerald-600">Todo al dia</p>
+                <p className="text-sm mt-2">No hay alertas pendientes en este momento</p>
+              </div>
+            )}
           </div>
         )}
 
