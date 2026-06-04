@@ -49,6 +49,9 @@ export default function Dashboard() {
   const [filtroCobrarEstado, setFiltroCobrarEstado] = useState('')
   const [filtroCobrarFecha, setFiltroCobrarFecha] = useState('')
   const [pagoModal, setPagoModal] = useState<any>(null)
+  const [filtroPagarProveedor, setFiltroPagarProveedor] = useState('')
+  const [filtroPagarEstado, setFiltroPagarEstado] = useState('')
+  const [filtroPagarFecha, setFiltroPagarFecha] = useState('')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -152,6 +155,14 @@ export default function Dashboard() {
     return true
   })
 
+  const facturasPagar = facturas.filter(f => {
+    if (!['Factura de Compra', 'Gasto'].includes(f.categoria)) return false
+    if (filtroPagarProveedor && !f.proveedor?.toLowerCase().includes(filtroPagarProveedor.toLowerCase())) return false
+    if (filtroPagarEstado && f.estado !== filtroPagarEstado) return false
+    if (filtroPagarFecha && f.fecha < filtroPagarFecha) return false
+    return true
+  })
+
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <p className="text-white">Cargando...</p>
@@ -196,7 +207,6 @@ export default function Dashboard() {
 
       <main className="flex-1 ml-64 p-8">
 
-        {/* DASHBOARD */}
         {seccion === 'dashboard' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
@@ -231,7 +241,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* DOCUMENTOS */}
         {(seccion === 'documentos' || seccion === 'revision') && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">{seccion === 'revision' ? 'Revision IA' : 'Documentos'}</h2>
@@ -319,7 +328,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* CUENTAS POR COBRAR */}
         {seccion === 'cobrar' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Cuentas por Cobrar</h2>
@@ -327,16 +335,11 @@ export default function Dashboard() {
               <p className="text-slate-500 text-sm">Total pendiente por cobrar</p>
               <p className="text-3xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
             </div>
-
             <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input
-                  type="text"
-                  placeholder="Buscar por cliente..."
-                  value={filtroCobrarCliente}
+                <input type="text" placeholder="Buscar por cliente..." value={filtroCobrarCliente}
                   onChange={(e) => setFiltroCobrarCliente(e.target.value)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                 <select value={filtroCobrarEstado} onChange={(e) => setFiltroCobrarEstado(e.target.value)}
                   className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
                   <option value="">Todos los estados</option>
@@ -344,15 +347,10 @@ export default function Dashboard() {
                   <option value="Pagado">Pagado</option>
                   <option value="Vencido">Vencido</option>
                 </select>
-                <input
-                  type="date"
-                  value={filtroCobrarFecha}
-                  onChange={(e) => setFiltroCobrarFecha(e.target.value)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="date" value={filtroCobrarFecha} onChange={(e) => setFiltroCobrarFecha(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
               </div>
             </div>
-
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               {facturasCobrar.length === 0 ? (
                 <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay facturas que coincidan.</p></div>
@@ -410,7 +408,6 @@ export default function Dashboard() {
           </div>
         )}
 
-{/* CUENTAS POR PAGAR */}
         {seccion === 'pagar' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Cuentas por Pagar</h2>
@@ -418,16 +415,11 @@ export default function Dashboard() {
               <p className="text-slate-500 text-sm">Total pendiente por pagar</p>
               <p className="text-3xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
             </div>
-
             <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input
-                  type="text"
-                  placeholder="Buscar por proveedor..."
-                  value={filtroPagarProveedor}
+                <input type="text" placeholder="Buscar por proveedor..." value={filtroPagarProveedor}
                   onChange={(e) => setFiltroPagarProveedor(e.target.value)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
                 <select value={filtroPagarEstado} onChange={(e) => setFiltroPagarEstado(e.target.value)}
                   className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
                   <option value="">Todos los estados</option>
@@ -435,15 +427,10 @@ export default function Dashboard() {
                   <option value="Pagado">Pagado</option>
                   <option value="Vencido">Vencido</option>
                 </select>
-                <input
-                  type="date"
-                  value={filtroPagarFecha}
-                  onChange={(e) => setFiltroPagarFecha(e.target.value)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
+                <input type="date" value={filtroPagarFecha} onChange={(e) => setFiltroPagarFecha(e.target.value)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
               </div>
             </div>
-
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               {facturasPagar.length === 0 ? (
                 <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">📭</p><p>No hay facturas que coincidan.</p></div>
@@ -506,7 +493,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-        {/* PROXIMAS SECCIONES */}
+
         {['clientes', 'proveedores', 'reportes', 'configuracion'].includes(seccion) && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
@@ -520,14 +507,13 @@ export default function Dashboard() {
 
       </main>
 
-      {/* MODAL REGISTRAR PAGO */}
       {pagoModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
             <h3 className="text-lg font-bold text-slate-800 mb-4">Registrar Pago</h3>
             <div className="space-y-3 mb-6">
               <div className="flex justify-between">
-                <span className="text-slate-500 text-sm">Cliente</span>
+                <span className="text-slate-500 text-sm">Cliente/Proveedor</span>
                 <span className="font-medium text-sm">{pagoModal.proveedor}</span>
               </div>
               <div className="flex justify-between">
