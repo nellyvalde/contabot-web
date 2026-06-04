@@ -269,7 +269,18 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
     return fechaDoc.toDateString() === hoy.toDateString()
   })
   const totalAlertas = cobrarVencidas.length + cobrarProximas.length + pagarVencidas.length + pagarProximas.length
-
+const facturasFiltradas = facturas.filter(f => {
+    const matchFiltro = filtroDoc === 'todos' ? true :
+      filtroDoc === 'Pendiente' || filtroDoc === 'Pagado' || filtroDoc === 'Vencido'
+        ? f.estado === filtroDoc
+        : f.categoria === filtroDoc
+    const buscar = buscarDoc.toLowerCase()
+    const matchBuscar = !buscarDoc ||
+      f.proveedor?.toLowerCase().includes(buscar) ||
+      f.numero_factura?.toLowerCase().includes(buscar) ||
+      f.descripcion?.toLowerCase().includes(buscar)
+    return matchFiltro && matchBuscar
+  })
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <p className="text-white">Cargando...</p>
