@@ -512,9 +512,10 @@ export default function Dashboard() {
           </div>
         )}
 
-        {seccion === 'clientes' && (
+     {seccion === 'clientes' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Clientes</h2>
+
             {!clienteSeleccionado ? (
               <div className="bg-white rounded-2xl p-6 shadow-sm">
                 <p className="text-slate-500 text-sm mb-4">Clientes generados automaticamente desde Facturas de Venta</p>
@@ -528,10 +529,9 @@ export default function Dashboard() {
                     <thead>
                       <tr className="text-left text-slate-500 border-b">
                         <th className="pb-2">Cliente</th>
-                        <th className="pb-2">Cantidad Facturas</th>
-                        <th className="pb-2">Total Facturado</th>
-                        <th className="pb-2">Total Pendiente</th>
+                        <th className="pb-2">Pendiente por Cobrar</th>
                         <th className="pb-2">Ultima Factura</th>
+                        <th className="pb-2">Estado</th>
                         <th className="pb-2"></th>
                       </tr>
                     </thead>
@@ -539,14 +539,17 @@ export default function Dashboard() {
                       {clientesAgrupados.map((c) => (
                         <tr key={c.nombre} className="border-b last:border-0 hover:bg-slate-50">
                           <td className="py-3 font-medium">{c.nombre}</td>
-                          <td className="py-3 text-slate-500">{c.cantidadFacturas}</td>
-                          <td className="py-3 text-emerald-700 font-medium">${c.totalFacturado.toLocaleString()}</td>
                           <td className="py-3">
                             <span className={`font-medium ${c.totalPendiente > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
                               ${c.totalPendiente.toLocaleString()}
                             </span>
                           </td>
                           <td className="py-3 text-slate-500">{c.ultimaFactura}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${c.totalPendiente > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {c.totalPendiente > 0 ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </td>
                           <td className="py-3">
                             <button onClick={() => setClienteSeleccionado(c.nombre)}
                               className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
@@ -563,61 +566,132 @@ export default function Dashboard() {
               <div>
                 <button onClick={() => setClienteSeleccionado(null)}
                   className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-800 text-sm">
-                  Volver a Clientes
+                  &larr; Volver a Clientes
                 </button>
                 {(() => {
                   const c = clientesAgrupados.find(x => x.nombre === clienteSeleccionado)
                   if (!c) return null
+                  const totalPagado = c.facturas.filter((f: any) => f.estado === 'Pagado').reduce((a: number, b: any) => a + (b.valor || 0), 0)
+                  const facturasPendientes = c.facturas.filter((f: any) => f.estado !== 'Pagado')
+                  const facturasPagadas = c.facturas.filter((f: any) => f.estado === 'Pagado')
                   return (
                     <div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                        <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
-                          <p className="text-slate-500 text-sm">Total Facturado</p>
-                          <p className="text-2xl font-bold text-emerald-600 mt-1">${c.totalFacturado.toLocaleString()}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="bg-white rounded-2xl p-6 shadow-sm">
+                          <h3 className="text-lg font-semibold text-slate-800 mb-4">Informacion del Cliente</h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between border-b pb-2">
+                              <span className="text-slate-500 text-sm">Razon Social</span>
+                              <span className="font-medium text-sm">{c.nombre}</span>
+                            </div>
+                            <div className="flex justify-between border-b pb-2">
+                              <span className="text-slate-500 text-sm">NIT</span>
+                              <span className="text-sm">{c.nit || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b pb-2">
+                              <span className="text-slate-500 text-sm">Correo</span>
+                              <span className="text-sm">{c.correo || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b pb-2">
+                              <span className="text-slate-500 text-sm">Telefono</span>
+                              <span className="text-sm">{c.telefono || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b pb-2">
+                              <span className="text-slate-500 text-sm">Direccion</span>
+                              <span className="text-sm">{c.direccion || '-'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-500 text-sm">Ciudad</span>
+                              <span className="text-sm">{c.ciudad || '-'}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-yellow-500">
-                          <p className="text-slate-500 text-sm">Total Pendiente</p>
-                          <p className="text-2xl font-bold text-yellow-600 mt-1">${c.totalPendiente.toLocaleString()}</p>
-                        </div>
-                        <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500">
-                          <p className="text-slate-500 text-sm">Facturas</p>
-                          <p className="text-2xl font-bold text-blue-600 mt-1">{c.cantidadFacturas}</p>
+                        <div className="grid grid-cols-2 gap-4 content-start">
+                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-emerald-500">
+                            <p className="text-slate-500 text-xs">Total Facturado</p>
+                            <p className="text-xl font-bold text-emerald-600 mt-1">${c.totalFacturado.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-blue-500">
+                            <p className="text-slate-500 text-xs">Total Pagado</p>
+                            <p className="text-xl font-bold text-blue-600 mt-1">${totalPagado.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-yellow-500">
+                            <p className="text-slate-500 text-xs">Pendiente por Cobrar</p>
+                            <p className="text-xl font-bold text-yellow-600 mt-1">${c.totalPendiente.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-slate-400">
+                            <p className="text-slate-500 text-xs">Cantidad Facturas</p>
+                            <p className="text-xl font-bold text-slate-600 mt-1">{c.cantidadFacturas}</p>
+                          </div>
                         </div>
                       </div>
-                      <div className="bg-white rounded-2xl p-6 shadow-sm">
-                        <h3 className="text-lg font-semibold text-slate-800 mb-4">Historial de Facturas - {clienteSeleccionado}</h3>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-slate-500 border-b">
-                              <th className="pb-2">Fecha</th>
-                              <th className="pb-2">Descripcion</th>
-                              <th className="pb-2">Valor</th>
-                              <th className="pb-2">Estado</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {c.facturas.map((f: any) => (
-                              <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
-                                <td className="py-3 text-slate-500">{f.fecha}</td>
-                                <td className="py-3">{f.descripcion}</td>
-                                <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
-                                <td className="py-3">
-                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
-                                    {f.estado || 'Pendiente'}
-                                  </span>
-                                </td>
+
+                      {facturasPendientes.length > 0 && (
+                        <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+                          <h3 className="text-lg font-semibold text-slate-800 mb-4">Facturas Pendientes</h3>
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-slate-500 border-b">
+                                <th className="pb-2">Fecha</th>
+                                <th className="pb-2">Descripcion</th>
+                                <th className="pb-2">Valor</th>
+                                <th className="pb-2">Estado</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {facturasPendientes.map((f: any) => (
+                                <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                  <td className="py-3 text-slate-500">{f.fecha}</td>
+                                  <td className="py-3">{f.descripcion}</td>
+                                  <td className="py-3 text-yellow-600 font-medium">${f.valor?.toLocaleString()}</td>
+                                  <td className="py-3">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                                      {f.estado || 'Pendiente'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {facturasPagadas.length > 0 && (
+                        <div className="bg-white rounded-2xl p-6 shadow-sm">
+                          <h3 className="text-lg font-semibold text-slate-800 mb-4">Facturas Pagadas</h3>
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-slate-500 border-b">
+                                <th className="pb-2">Fecha</th>
+                                <th className="pb-2">Descripcion</th>
+                                <th className="pb-2">Valor</th>
+                                <th className="pb-2">Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {facturasPagadas.map((f: any) => (
+                                <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                  <td className="py-3 text-slate-500">{f.fecha}</td>
+                                  <td className="py-3">{f.descripcion}</td>
+                                  <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                                  <td className="py-3">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                                      {f.estado || 'Pendiente'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
               </div>
             )}
           </div>
-        )}
+        )}   
 
         {['proveedores', 'reportes', 'configuracion'].includes(seccion) && (
           <div>
