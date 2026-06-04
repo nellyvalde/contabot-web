@@ -29,6 +29,13 @@ const menuItems = [
   { id: 'configuracion', icon: '⚙️', label: 'Configuracion' },
 ]
 
+function diasDesde(fecha: string | null) {
+  if (!fecha) return 0
+  const hoy = new Date()
+  const f = new Date(fecha)
+  return Math.floor((hoy.getTime() - f.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 function diasVencidos(fechaVencimiento: string | null, estado: string) {
   if (!fechaVencimiento || estado === 'Pagado') return 0
   const hoy = new Date()
@@ -201,14 +208,17 @@ export default function Dashboard() {
         }
         acc[nombre].cantidadFacturas++
         acc[nombre].totalFacturado += f.valor || 0
-        if (f.estado === 'Pendiente') acc[nombre].totalPendiente += f.valor || 0
+        if (f.estado === 'Pendiente' || f.estado === 'Vencido') acc[nombre].totalPendiente += f.valor || 0
         if (f.fecha > acc[nombre].ultimaFactura) acc[nombre].ultimaFactura = f.fecha
         acc[nombre].facturas.push(f)
         return acc
       }, {})
   ).map((c: any) => {
     const clienteDB = clientesDB.find((db: any) => db.nombre === c.nombre)
-    return { ...c, ...(clienteDB || {}) }
+    const tieneVencidas = c.facturas.some((f: any) => f.estado === 'Vencido')
+    const tienePendientes = c.facturas.some((f: any) => f.estado === 'Pendiente')
+    const estadoCartera = tieneVencidas ? 'Vencida' : tienePendientes ? 'Pendiente' : 'Al dia'
+    return { ...c, ...(clienteDB || {}), estadoCartera }
   }) as any[]
 
   if (!user) return (
@@ -560,7 +570,7 @@ export default function Dashboard() {
                         <th className="pb-2">Cliente</th>
                         <th className="pb-2">Pendiente por Cobrar</th>
                         <th className="pb-2">Ultima Factura</th>
-                        <th className="pb-2">Estado</th>
+                        <th className="pb-2">Estado Cartera</th>
                         <th className="pb-2"></th>
                       </tr>
                     </thead>
@@ -575,8 +585,12 @@ export default function Dashboard() {
                           </td>
                           <td className="py-3 text-slate-500">{c.ultimaFactura}</td>
                           <td className="py-3">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${c.totalPendiente > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                              {c.totalPendiente > 0 ? 'Activo' : 'Inactivo'}
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              c.estadoCartera === 'Vencida' ? 'bg-red-100 text-red-700' :
+                              c.estadoCartera === 'Pendiente' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {c.estadoCartera}
                             </span>
                           </td>
                           <td className="py-3">
@@ -600,94 +614,122 @@ export default function Dashboard() {
                 {(() => {
                   const c = clientesAgrupados.find(x => x.nombre === clienteSeleccionado)
                   if (!c) return null
-                  const totalPagado = c.facturas.filter((f: any) => f.estado === 'Pagado').reduce((a: number, b: any) => a + (b.valor || 0), 0)
+                  const totalCobrado = c.facturas.filter((f: any) => f.estado === 'Pagado').reduce((a: number, b: any) => a + (b.valor || 0), 0)
                   const facturasPendientes = c.facturas.filter((f: any) => f.estado !== 'Pagado')
                   const facturasPagadas = c.facturas.filter((f: any) => f.estado === 'Pagado')
                   return (
                     <div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                        <div className="bg-white rounded-2xl p-6 shadow-sm">
-                          <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-slate-800">Informacion del Cliente</h3>
-                            {!editandoCliente ? (
-                              <button onClick={() => setEditandoCliente(true)}
-                                className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
-                                Editar
+                      {/* Informacion General */}
+                      <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-slate-800">Informacion General</h3>
+                          {!editandoCliente ? (
+                            <button onClick={() => setEditandoCliente(true)}
+                              className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
+                              Editar datos
+                            </button>
+                          ) : (
+                            <div className="flex gap-2">
+                              <button onClick={() => setEditandoCliente(false)}
+                                className="border border-slate-200 text-slate-500 text-xs px-3 py-1 rounded-lg hover:bg-slate-50">
+                                Cancelar
                               </button>
-                            ) : (
-                              <div className="flex gap-2">
-                                <button onClick={() => setEditandoCliente(false)}
-                                  className="border border-slate-200 text-slate-500 text-xs px-3 py-1 rounded-lg hover:bg-slate-50">
-                                  Cancelar
-                                </button>
-                                <button onClick={() => guardarCliente(c.nombre)}
-                                  className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded-lg">
-                                  Guardar
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          <div className="space-y-3">
-                            <div className="flex justify-between border-b pb-2 items-center">
-                              <span className="text-slate-500 text-sm">Razon Social</span>
-                              <span className="font-medium text-sm">{c.nombre}</span>
+                              <button onClick={() => guardarCliente(c.nombre)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded-lg">
+                                Guardar
+                              </button>
                             </div>
-                            {['nit', 'correo', 'telefono', 'direccion', 'ciudad'].map((campo) => (
-                              <div key={campo} className="flex justify-between border-b pb-2 items-center">
-                                <span className="text-slate-500 text-sm capitalize">{campo}</span>
-                                {editandoCliente ? (
-                                  <input
-                                    type="text"
-                                    value={datosEditCliente[campo] || ''}
-                                    onChange={(e) => setDatosEditCliente((prev: any) => ({ ...prev, [campo]: e.target.value }))}
-                                    className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                    placeholder={campo}
-                                  />
-                                ) : (
-                                  <span className="text-sm">{c[campo] || '-'}</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
+                          )}
                         </div>
-                        <div className="grid grid-cols-2 gap-4 content-start">
-                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-emerald-500">
-                            <p className="text-slate-500 text-xs">Total Facturado</p>
-                            <p className="text-xl font-bold text-emerald-600 mt-1">${c.totalFacturado.toLocaleString()}</p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Razon Social</p>
+                            <p className="font-medium text-sm">{c.nombre}</p>
                           </div>
-                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-blue-500">
-                            <p className="text-slate-500 text-xs">Total Pagado</p>
-                            <p className="text-xl font-bold text-blue-600 mt-1">${totalPagado.toLocaleString()}</p>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">NIT</p>
+                            {editandoCliente ? (
+                              <input type="text" value={datosEditCliente.nit || ''} onChange={(e) => setDatosEditCliente((p: any) => ({ ...p, nit: e.target.value }))}
+                                className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="NIT" />
+                            ) : <p className="text-sm">{c.nit || '-'}</p>}
                           </div>
-                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-yellow-500">
-                            <p className="text-slate-500 text-xs">Pendiente por Cobrar</p>
-                            <p className="text-xl font-bold text-yellow-600 mt-1">${c.totalPendiente.toLocaleString()}</p>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Estado de Cartera</p>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              c.estadoCartera === 'Vencida' ? 'bg-red-100 text-red-700' :
+                              c.estadoCartera === 'Pendiente' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {c.estadoCartera}
+                            </span>
                           </div>
-                          <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-slate-400">
-                            <p className="text-slate-500 text-xs">Cantidad Facturas</p>
-                            <p className="text-xl font-bold text-slate-600 mt-1">{c.cantidadFacturas}</p>
-                          </div>
+                          {editandoCliente && (
+                            <>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Correo</p>
+                                <input type="text" value={datosEditCliente.correo || ''} onChange={(e) => setDatosEditCliente((p: any) => ({ ...p, correo: e.target.value }))}
+                                  className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Correo" />
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Telefono</p>
+                                <input type="text" value={datosEditCliente.telefono || ''} onChange={(e) => setDatosEditCliente((p: any) => ({ ...p, telefono: e.target.value }))}
+                                  className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Telefono" />
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-500 mb-1">Ciudad</p>
+                                <input type="text" value={datosEditCliente.ciudad || ''} onChange={(e) => setDatosEditCliente((p: any) => ({ ...p, ciudad: e.target.value }))}
+                                  className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ciudad" />
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
 
+                      {/* Resumen Financiero */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-emerald-500">
+                          <p className="text-slate-500 text-xs">Total Facturado</p>
+                          <p className="text-xl font-bold text-emerald-600 mt-1">${c.totalFacturado.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-blue-500">
+                          <p className="text-slate-500 text-xs">Total Cobrado</p>
+                          <p className="text-xl font-bold text-blue-600 mt-1">${totalCobrado.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-yellow-500">
+                          <p className="text-slate-500 text-xs">Pendiente por Cobrar</p>
+                          <p className="text-xl font-bold text-yellow-600 mt-1">${c.totalPendiente.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-slate-400">
+                          <p className="text-slate-500 text-xs">Total Facturas</p>
+                          <p className="text-xl font-bold text-slate-600 mt-1">{c.cantidadFacturas}</p>
+                        </div>
+                      </div>
+
+                      {/* Facturas Pendientes */}
                       {facturasPendientes.length > 0 && (
                         <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
                           <h3 className="text-lg font-semibold text-slate-800 mb-4">Facturas Pendientes</h3>
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="text-left text-slate-500 border-b">
-                                <th className="pb-2">Fecha</th>
-                                <th className="pb-2">Descripcion</th>
+                                <th className="pb-2">No. Factura</th>
+                                <th className="pb-2">Fecha Factura</th>
                                 <th className="pb-2">Valor</th>
+                                <th className="pb-2">Dias Pendiente</th>
                                 <th className="pb-2">Estado</th>
                               </tr>
                             </thead>
                             <tbody>
                               {facturasPendientes.map((f: any) => (
                                 <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                  <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
                                   <td className="py-3 text-slate-500">{f.fecha}</td>
-                                  <td className="py-3">{f.descripcion}</td>
                                   <td className="py-3 text-yellow-600 font-medium">${f.valor?.toLocaleString()}</td>
+                                  <td className="py-3">
+                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                                      {diasDesde(f.fecha)} dias
+                                    </span>
+                                  </td>
                                   <td className="py-3">
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
                                       {f.estado || 'Pendiente'}
@@ -700,14 +742,15 @@ export default function Dashboard() {
                         </div>
                       )}
 
+                      {/* Facturas Pagadas */}
                       {facturasPagadas.length > 0 && (
-                        <div className="bg-white rounded-2xl p-6 shadow-sm">
+                        <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
                           <h3 className="text-lg font-semibold text-slate-800 mb-4">Facturas Pagadas</h3>
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="text-left text-slate-500 border-b">
-                                <th className="pb-2">Fecha</th>
-                                <th className="pb-2">Descripcion</th>
+                                <th className="pb-2">No. Factura</th>
+                                <th className="pb-2">Fecha Factura</th>
                                 <th className="pb-2">Valor</th>
                                 <th className="pb-2">Estado</th>
                               </tr>
@@ -715,8 +758,8 @@ export default function Dashboard() {
                             <tbody>
                               {facturasPagadas.map((f: any) => (
                                 <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                  <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
                                   <td className="py-3 text-slate-500">{f.fecha}</td>
-                                  <td className="py-3">{f.descripcion}</td>
                                   <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
                                   <td className="py-3">
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
@@ -729,6 +772,37 @@ export default function Dashboard() {
                           </table>
                         </div>
                       )}
+
+                      {/* Historial Completo */}
+                      <div className="bg-white rounded-2xl p-6 shadow-sm">
+                        <h3 className="text-lg font-semibold text-slate-800 mb-4">Historial Completo</h3>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-slate-500 border-b">
+                              <th className="pb-2">No. Factura</th>
+                              <th className="pb-2">Fecha</th>
+                              <th className="pb-2">Descripcion</th>
+                              <th className="pb-2">Valor</th>
+                              <th className="pb-2">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {c.facturas.map((f: any) => (
+                              <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                                <td className="py-3 text-slate-500">{f.numero_factura || '-'}</td>
+                                <td className="py-3 text-slate-500">{f.fecha}</td>
+                                <td className="py-3">{f.descripcion}</td>
+                                <td className="py-3 font-medium text-slate-700">${f.valor?.toLocaleString()}</td>
+                                <td className="py-3">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                                    {f.estado || 'Pendiente'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )
                 })()}
