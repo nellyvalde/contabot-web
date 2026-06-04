@@ -154,7 +154,31 @@ export default function Dashboard() {
     if (filtroCobrarFecha && f.fecha < filtroCobrarFecha) return false
     return true
   })
+const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(null)
 
+  const clientesAgrupados = Object.values(
+    facturas
+      .filter(f => f.categoria === 'Factura de Venta')
+      .reduce((acc: any, f) => {
+        const nombre = f.proveedor || 'Sin nombre'
+        if (!acc[nombre]) {
+          acc[nombre] = {
+            nombre,
+            cantidadFacturas: 0,
+            totalFacturado: 0,
+            totalPendiente: 0,
+            ultimaFactura: f.fecha,
+            facturas: [],
+          }
+        }
+        acc[nombre].cantidadFacturas++
+        acc[nombre].totalFacturado += f.valor || 0
+        if (f.estado === 'Pendiente') acc[nombre].totalPendiente += f.valor || 0
+        if (f.fecha > acc[nombre].ultimaFactura) acc[nombre].ultimaFactura = f.fecha
+        acc[nombre].facturas.push(f)
+        return acc
+      }, {})
+  ) as any[]
   const facturasPagar = facturas.filter(f => {
     if (!['Factura de Compra', 'Gasto'].includes(f.categoria)) return false
     if (filtroPagarProveedor && !f.proveedor?.toLowerCase().includes(filtroPagarProveedor.toLowerCase())) return false
