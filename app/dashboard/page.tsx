@@ -75,6 +75,12 @@ export default function Dashboard() {
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
 const [filtroDoc, setFiltroDoc] = useState('todos')
   const [buscarDoc, setBuscarDoc] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroEstadoDoc, setFiltroEstadoDoc] = useState('')
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState('')
+  const [filtroFechaFin, setFiltroFechaFin] = useState('')
+  const [filtroValorMin, setFiltroValorMin] = useState('')
+  const [filtroValorMax, setFiltroValorMax] = useState('')
   
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -279,7 +285,13 @@ const facturasFiltradas = facturas.filter(f => {
       f.proveedor?.toLowerCase().includes(buscar) ||
       f.numero_factura?.toLowerCase().includes(buscar) ||
       f.descripcion?.toLowerCase().includes(buscar)
-    return matchFiltro && matchBuscar
+    const matchTipo = !filtroTipo || f.categoria === filtroTipo
+    const matchEstado = !filtroEstadoDoc || f.estado === filtroEstadoDoc
+    const matchFechaInicio = !filtroFechaInicio || f.fecha >= filtroFechaInicio
+    const matchFechaFin = !filtroFechaFin || f.fecha <= filtroFechaFin
+    const matchValorMin = !filtroValorMin || (f.valor || 0) >= parseFloat(filtroValorMin)
+    const matchValorMax = !filtroValorMax || (f.valor || 0) <= parseFloat(filtroValorMax)
+    return matchFiltro && matchBuscar && matchTipo && matchEstado && matchFechaInicio && matchFechaFin && matchValorMin && matchValorMax
   })
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -415,15 +427,50 @@ const facturasFiltradas = facturas.filter(f => {
             </div>
 
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="flex flex-col md:flex-row gap-4 mb-6">
+             <div className="space-y-4 mb-6">
                 <input
                   type="text"
-                  placeholder="Buscar por cliente, proveedor, NIT o numero de factura..."
+                  placeholder="Buscar por cliente, proveedor, numero de factura o descripcion..."
                   value={buscarDoc}
                   onChange={(e) => setBuscarDoc(e.target.value)}
-                  className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="">Tipo de documento</option>
+                    <option value="Factura de Venta">Factura de Venta</option>
+                    <option value="Factura de Compra">Factura de Compra</option>
+                    <option value="Gasto">Gasto</option>
+                    <option value="Nomina">Nomina</option>
+                    <option value="Extracto Bancario">Extracto Bancario</option>
+                    <option value="Documento Tributario">Documento Tributario</option>
+                  </select>
+                  <select value={filtroEstadoDoc} onChange={(e) => setFiltroEstadoDoc(e.target.value)}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="">Todos los estados</option>
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Pagado">Pagado</option>
+                    <option value="Vencido">Vencido</option>
+                  </select>
+                  <button
+                    onClick={() => { setBuscarDoc(''); setFiltroTipo(''); setFiltroEstadoDoc(''); setFiltroFechaInicio(''); setFiltroFechaFin(''); setFiltroValorMin(''); setFiltroValorMax(''); setFiltroDoc('todos') }}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-500 hover:bg-slate-50">
+                    Limpiar filtros
+                  </button>
+                  <input type="date" value={filtroFechaInicio} onChange={(e) => setFiltroFechaInicio(e.target.value)}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  <input type="date" value={filtroFechaFin} onChange={(e) => setFiltroFechaFin(e.target.value)}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="Valor min" value={filtroValorMin} onChange={(e) => setFiltroValorMin(e.target.value)}
+                      className="w-1/2 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <input type="number" placeholder="Valor max" value={filtroValorMax} onChange={(e) => setFiltroValorMax(e.target.value)}
+                      className="w-1/2 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                </div>
               </div>
+
               <div className="flex flex-wrap gap-2 mb-6">
                 {[
                   { key: 'todos', label: 'Todos', count: facturas.length },
