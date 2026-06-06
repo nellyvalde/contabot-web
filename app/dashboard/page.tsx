@@ -73,6 +73,8 @@ export default function Dashboard() {
   const [editandoCliente, setEditandoCliente] = useState(false)
   const [datosEditCliente, setDatosEditCliente] = useState<any>({})
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
+  const [facturaViewer, setFacturaViewer] = useState<any>(null)
+const [archivoFile, setArchivoFile] = useState<File | null>(null)
 const [filtroDoc, setFiltroDoc] = useState('todos')
   const [buscarDoc, setBuscarDoc] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
@@ -115,6 +117,7 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
   const handleArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setArchivoFile(file)
     setLoading(true)
     setMensaje('La IA esta leyendo y clasificando tu documento...')
     setDatosFact(null)
