@@ -149,29 +149,43 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
     cargarFacturas(user.id)
   }
 
-  const handleGuardar = async () => {
-    if (!datosFact || !user) return
-    setGuardando(true)
-    const { error } = await supabase.from('facturas').insert({
-      user_id: user.id,
-      proveedor: datosFact.proveedor,
-      fecha: datosFact.fecha,
-      valor: datosFact.valor,
-      iva: datosFact.iva,
-      descripcion: datosFact.descripcion,
-      tipo: datosFact.tipo,
-      categoria: datosFact.categoria,
-      estado: 'Pendiente',
-    })
-    if (error) {
-      setMensaje('Error guardando: ' + error.message)
-    } else {
-      setMensaje('Documento guardado correctamente')
-      setDatosFact(null)
-      cargarFacturas(user.id)
+ const handleGuardar = async () => {
+  if (!datosFact || !user) return
+  setGuardando(true)
+  let archivo_url = null
+  if (archivoFile) {
+    const ext = archivoFile.name.split('.').pop()
+    const path = `${user.id}/${Date.now()}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from('facturas')
+      .upload(path, archivoFile)
+    if (!uploadError) {
+      const { data: urlData } = supabase.storage.from('facturas').getPublicUrl(path)
+      archivo_url = urlData.publicUrl
     }
-    setGuardando(false)
   }
+  const { error } = await supabase.from('facturas').insert({
+    user_id: user.id,
+    proveedor: datosFact.proveedor,
+    fecha: datosFact.fecha,
+    valor: datosFact.valor,
+    iva: datosFact.iva,
+    descripcion: datosFact.descripcion,
+    tipo: datosFact.tipo,
+    categoria: datosFact.categoria,
+    estado: 'Pendiente',
+    archivo_url,
+  })
+  if (error) {
+    setMensaje('Error guardando: ' + error.message)
+  } else {
+    setMensaje('Documento guardado correctamente')
+    setDatosFact(null)
+    setArchivoFile(null)
+    cargarFacturas(user.id)
+  }
+  setGuardando(false)
+}
 
   const handleRegistrarPago = async () => {
     if (!pagoModal) return
