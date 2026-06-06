@@ -152,6 +152,21 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
  const handleGuardar = async () => {
   if (!datosFact || !user) return
   setGuardando(true)
+  // Verificar duplicado
+const { data: duplicado } = await supabase
+  .from('facturas')
+  .select('id')
+  .eq('user_id', user.id)
+  .eq('proveedor', datosFact.proveedor)
+  .eq('valor', datosFact.valor)
+  .eq('fecha', datosFact.fecha)
+  .maybeSingle()
+
+if (duplicado) {
+  setMensaje('⚠️ Este documento ya existe en ContaBot. No se guardó para evitar duplicados.')
+  setGuardando(false)
+  return
+}
   let archivo_url = null
   if (archivoFile) {
     const ext = archivoFile.name.split('.').pop()
