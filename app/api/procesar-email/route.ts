@@ -48,16 +48,18 @@ export async function POST(request: NextRequest) {
           content: [
             {
               type: 'text',
-              text: `Eres un auxiliar contable colombiano experto en facturas electronicas DIAN. Analiza esta factura y responde UNICAMENTE con JSON valido sin texto adicional ni backticks ni explicaciones:
+              text: `Eres un auxiliar contable colombiano experto en facturas electronicas DIAN.
+Esta factura pertenece a la empresa SODEPORTC SAS NIT 901183507.
+Analiza esta factura y responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
 {
-  "proveedor": "razon social del EMISOR quien factura no quien recibe",
-  "nit": "NIT del emisor sin digito verificacion ni guion",
+  "proveedor": "si SODEPORTC SAS es el EMISOR de la factura entonces coloca aqui el nombre de quien la RECIBE. Si SODEPORTC SAS es quien RECIBE la factura entonces coloca aqui el nombre de quien la EMITE",
+  "nit": "NIT de la contraparte sin digito verificacion ni guion",
   "fecha": "fecha expedicion en formato YYYY-MM-DD",
   "valor": numero entero del TOTAL NETO sin puntos ni comas,
   "iva": numero entero del IVA sin puntos ni comas,
   "descripcion": "descripcion del servicio o producto principal",
-  "tipo": "Factura de Venta",
-  "categoria": "Factura de Venta",
+  "tipo": "Factura de Venta si SODEPORTC SAS es el emisor, Factura de Compra si SODEPORTC SAS es quien recibe",
+  "categoria": "igual que tipo",
   "numero_factura": "prefijo y numero ejemplo VALN67",
   "cufe": "codigo CUFE completo"
 }`
@@ -77,8 +79,7 @@ export async function POST(request: NextRequest) {
 
     const iaData = await iaRes.json()
     const texto = iaData.content?.[0]?.text || '{}'
-    console.log('iaData completo:', JSON.stringify(iaData).substring(0, 500))
-    console.log('Texto IA:', texto)
+    console.log('Respuesta IA:', texto)
 
     let datosExtraidos: any = {}
     try {
