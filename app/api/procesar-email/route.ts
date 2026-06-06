@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Buscar empresa por correo del remitente o usar correo fijo
     const correoEmpresa = 'asistenciasodeportc@gmail.com'
     const { data: empresa } = await supabaseAdmin
       .from('empresas')
@@ -34,7 +33,6 @@ export async function POST(request: NextRequest) {
 
     const userId = empresa.user_id
 
-    // Procesar con IA
     const iaRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -50,17 +48,18 @@ export async function POST(request: NextRequest) {
           content: [
             {
               type: 'text',
-              text: `Eres un auxiliar contable colombiano experto. Extrae los datos de este documento contable y responde UNICAMENTE con un JSON valido sin texto adicional ni backticks:
+              text: `Eres un auxiliar contable colombiano experto en facturas electronicas DIAN. Analiza esta factura y responde UNICAMENTE con JSON valido sin texto adicional ni backticks ni explicaciones:
 {
-  "proveedor": "razon social del emisor o vendedor",
-  "nit": "NIT del emisor sin digito verificacion",
-  "fecha": "fecha en formato YYYY-MM-DD",
-  "valor": numero entero sin puntos ni comas,
-  "iva": numero entero del IVA,
-  "descripcion": "descripcion breve del concepto",
-  "tipo": "Factura de Compra",
-  "categoria": "Factura de Compra",
-  "numero_factura": "numero de factura"
+  "proveedor": "razon social del EMISOR quien factura no quien recibe",
+  "nit": "NIT del emisor sin digito verificacion ni guion",
+  "fecha": "fecha expedicion en formato YYYY-MM-DD",
+  "valor": numero entero del TOTAL NETO sin puntos ni comas,
+  "iva": numero entero del IVA sin puntos ni comas,
+  "descripcion": "descripcion del servicio o producto principal",
+  "tipo": "Factura de Venta",
+  "categoria": "Factura de Venta",
+  "numero_factura": "prefijo y numero ejemplo VALN67",
+  "cufe": "codigo CUFE completo"
 }`
             },
             {
@@ -78,12 +77,16 @@ export async function POST(request: NextRequest) {
 
     const iaData = await iaRes.json()
     const texto = iaData.content?.[0]?.text || '{}'
-    
+
     let datosExtraidos: any = {}
     try {
       datosExtraidos = JSON.parse(texto.replace(/```json|```/g, '').trim())
     } catch {
-      datosExtraidos = { descripcion: nombre, tipo: 'Factura de Compra', categoria: 'Factura de Compra' }
+      datosExtraidos = {
+        descripcion: nombre,
+        tipo: 'Factura de Compra',
+        categoria: 'Factura de Compra'
+      }
     }
 
     const { error } = await supabaseAdmin.from('facturas').insert({
@@ -93,8 +96,8 @@ export async function POST(request: NextRequest) {
       valor: datosExtraidos.valor || 0,
       iva: datosExtraidos.iva || 0,
       descripcion: datosExtraidos.descripcion || nombre,
-      tipo: datosExtraidos.tipo || 'Factura de Compra',
-      categoria: datosExtraidos.categoria || 'Factura de Compra',
+      tipo: datosExtraidos.tipo || 'Factura de Venta',
+      categoria: datosExtraidos.categoria || 'Factura de Venta',
       estado: 'Pendiente',
       numero_factura: datosExtraidos.numero_factura || null,
     })
