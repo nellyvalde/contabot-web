@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
 
     const iaData = await iaRes.json()
     const texto = iaData.content?.[0]?.text || '{}'
-    console.log('Respuesta IA completa:', JSON.stringify(iaData))
-    console.log('Texto extraido:', texto)
+    console.log('iaData completo:', JSON.stringify(iaData).substring(0, 500))
+    console.log('Texto IA:', texto)
 
     let datosExtraidos: any = {}
     try {
