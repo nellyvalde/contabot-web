@@ -545,9 +545,14 @@ const facturasFiltradas = facturas.filter(f => {
                             <option value="Vencido">Vencido</option>
                           </select>
                         </td>
-                        <td className="py-3">
-                          <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">Eliminar</button>
-                        </td>
+                        <td className="py-3 flex items-center gap-2">
+  {f.archivo_url && (
+    <button onClick={() => setFacturaViewer(f)}
+      className="text-blue-400 hover:text-blue-600 text-xs">👁</button>
+  )}
+  <button onClick={() => handleEliminar(f.id)}
+    className="text-red-400 hover:text-red-600 text-xs">Eliminar</button>
+                      </td>
                       </tr>
                     ))}
                   </tbody>
