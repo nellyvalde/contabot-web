@@ -64,10 +64,10 @@ export async function POST(request: NextRequest) {
 }`
             },
             {
-              type: 'image',
+              type: 'document',
               source: {
                 type: 'base64',
-                media_type: 'image/jpeg',
+                media_type: 'application/pdf',
                 data: archivo
               }
             }
