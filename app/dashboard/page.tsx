@@ -153,6 +153,23 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
   if (!datosFact || !user) return
   setGuardando(true)
   // Verificar duplicado
+// Verificar duplicado por numero_factura
+if (datosFact.numero_factura) {
+  const { data: dupNumero } = await supabase
+    .from('facturas')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('numero_factura', datosFact.numero_factura)
+    .maybeSingle()
+
+  if (dupNumero) {
+    setMensaje('⚠️ Ya existe una factura con el número ' + datosFact.numero_factura + '. No se guardó para evitar duplicados.')
+    setGuardando(false)
+    return
+  }
+}
+
+// Verificar duplicado por proveedor + fecha + valor
 const { data: duplicado } = await supabase
   .from('facturas')
   .select('id')
