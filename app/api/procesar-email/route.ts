@@ -48,20 +48,31 @@ export async function POST(request: NextRequest) {
           content: [
             {
               type: 'text',
-              text: `Eres un auxiliar contable colombiano experto en facturas electronicas DIAN.
-Esta factura pertenece a la empresa SODEPORTC SAS NIT 901183507.
-Analiza esta factura y responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
+              text: `Eres un auxiliar contable colombiano experto en documentos financieros.
+Esta empresa es SODEPORTC SAS NIT 901183507.
+Analiza este documento (puede ser factura electronica, comprobante bancario, recibo de pago, transferencia, extracto, nomina u otro documento financiero).
+
+REGLAS IMPORTANTES:
+- Si el documento es un comprobante de pago bancario (AV Villas, Bancolombia, Davivienda, etc): tipo="Comprobante de Egreso", categoria="Gasto", proveedor=nombre del beneficiario
+- Si SODEPORTC SAS es el EMISOR de la factura: tipo="Factura de Venta", categoria="Factura de Venta", proveedor=nombre del cliente que recibe
+- Si SODEPORTC SAS es quien RECIBE la factura: tipo="Factura de Compra", categoria="Factura de Compra", proveedor=nombre de quien emite
+- Si es nomina o pago a empleado: tipo="Nomina", categoria="Nomina"
+- Si es extracto bancario: tipo="Extracto Bancario", categoria="Extracto Bancario"
+- NUNCA respondas con null. Si no encuentras un dato usa "" para texto y 0 para numeros.
+- El valor debe ser el monto total de la transaccion como numero entero sin puntos ni comas.
+
+Responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
 {
-  "proveedor": "si SODEPORTC SAS es el EMISOR de la factura entonces coloca aqui el nombre de quien la RECIBE. Si SODEPORTC SAS es quien RECIBE la factura entonces coloca aqui el nombre de quien la EMITE",
-  "nit": "NIT de la contraparte sin digito verificacion ni guion",
-  "fecha": "fecha expedicion en formato YYYY-MM-DD",
-  "valor": numero entero del TOTAL NETO sin puntos ni comas,
-  "iva": numero entero del IVA sin puntos ni comas,
-  "descripcion": "descripcion del servicio o producto principal",
-  "tipo": "Factura de Venta si SODEPORTC SAS es el emisor, Factura de Compra si SODEPORTC SAS es quien recibe",
-  "categoria": "igual que tipo",
-  "numero_factura": "prefijo y numero ejemplo VALN67",
-  "cufe": "codigo CUFE completo"
+  "proveedor": "nombre de la contraparte (cliente, proveedor o beneficiario)",
+  "nit": "NIT o cedula de la contraparte sin digito verificacion",
+  "fecha": "fecha en formato YYYY-MM-DD",
+  "valor": numero entero del valor total,
+  "iva": numero entero del IVA o 0,
+  "descripcion": "descripcion breve del documento",
+  "tipo": "tipo segun las reglas anteriores",
+  "categoria": "categoria segun las reglas anteriores",
+  "numero_factura": "numero o codigo del documento o vacio",
+  "cufe": "CUFE si existe o vacio"
 }`
             },
             {
@@ -85,27 +96,32 @@ Analiza esta factura y responde UNICAMENTE con JSON valido sin texto adicional n
     try {
       datosExtraidos = JSON.parse(texto.replace(/```json|```/g, '').trim())
     } catch {
-      datosExtraidos = {
-        descripcion: nombre,
-        tipo: 'Factura de Compra',
-        categoria: 'Factura de Compra'
+      datosExtraidos = {}
+    }
+
+    // No guardar si no hay datos utiles
+    const sinDatos = !datosExtraidos.proveedor && (!datosExtraidos.valor || datosExtraidos.valor === 0)
+    if (sinDatos) {
+      console.log('Documento sin datos utiles, no se guarda:', nombre)
+      return NextResponse.json({ success: false, error: 'No se pudieron extraer datos del documento' })
+    }
+
+    // Subir archivo a Supabase Storage
+    let archivo_url = null
+    if (archivo) {
+      const buffer = Buffer.from(archivo, 'base64')
+      const fileName = `${userId}/${Date.now()}.pdf`
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('facturas')
+        .upload(fileName, buffer, { contentType: 'application/pdf' })
+      if (!uploadError) {
+        const { data: urlData } = supabaseAdmin.storage
+          .from('facturas')
+          .getPublicUrl(fileName)
+        archivo_url = urlData.publicUrl
       }
     }
-// Subir archivo a Supabase Storage
-let archivo_url = null
-if (archivo) {
-  const buffer = Buffer.from(archivo, 'base64')
-  const fileName = `${userId}/${Date.now()}.pdf`
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from('facturas')
-    .upload(fileName, buffer, { contentType: 'application/pdf' })
-  if (!uploadError) {
-    const { data: urlData } = supabaseAdmin.storage
-      .from('facturas')
-      .getPublicUrl(fileName)
-    archivo_url = urlData.publicUrl
-  }
-}
+
     const { error } = await supabaseAdmin.from('facturas').insert({
       user_id: userId,
       proveedor: datosExtraidos.proveedor || 'Sin nombre',
