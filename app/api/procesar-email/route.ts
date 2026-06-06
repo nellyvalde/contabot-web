@@ -91,7 +91,21 @@ Analiza esta factura y responde UNICAMENTE con JSON valido sin texto adicional n
         categoria: 'Factura de Compra'
       }
     }
-
+// Subir archivo a Supabase Storage
+let archivo_url = null
+if (archivo) {
+  const buffer = Buffer.from(archivo, 'base64')
+  const fileName = `${userId}/${Date.now()}.pdf`
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from('facturas')
+    .upload(fileName, buffer, { contentType: 'application/pdf' })
+  if (!uploadError) {
+    const { data: urlData } = supabaseAdmin.storage
+      .from('facturas')
+      .getPublicUrl(fileName)
+    archivo_url = urlData.publicUrl
+  }
+}
     const { error } = await supabaseAdmin.from('facturas').insert({
       user_id: userId,
       proveedor: datosExtraidos.proveedor || 'Sin nombre',
