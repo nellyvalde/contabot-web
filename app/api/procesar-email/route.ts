@@ -105,7 +105,35 @@ Responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
       console.log('Documento sin datos utiles, no se guarda:', nombre)
       return NextResponse.json({ success: false, error: 'No se pudieron extraer datos del documento' })
     }
+// Verificar duplicado por numero_factura
+if (datosExtraidos.numero_factura) {
+  const { data: dupNumero } = await supabaseAdmin
+    .from('facturas')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('numero_factura', datosExtraidos.numero_factura)
+    .maybeSingle()
 
+  if (dupNumero) {
+    console.log('Duplicado por numero_factura:', datosExtraidos.numero_factura)
+    return NextResponse.json({ success: false, error: 'Factura duplicada: ' + datosExtraidos.numero_factura })
+  }
+}
+
+// Verificar duplicado por proveedor + fecha + valor
+const { data: duplicado } = await supabaseAdmin
+  .from('facturas')
+  .select('id')
+  .eq('user_id', userId)
+  .eq('proveedor', datosExtraidos.proveedor)
+  .eq('valor', datosExtraidos.valor)
+  .eq('fecha', datosExtraidos.fecha)
+  .maybeSingle()
+
+if (duplicado) {
+  console.log('Duplicado por proveedor+fecha+valor')
+  return NextResponse.json({ success: false, error: 'Documento duplicado, ya existe en ContaBot' })
+}
     // Subir archivo a Supabase Storage
     let archivo_url = null
     if (archivo) {
