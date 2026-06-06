@@ -50,26 +50,22 @@ export async function POST(request: NextRequest) {
               type: 'text',
               text: `Eres un auxiliar contable colombiano experto en documentos financieros.
 Esta empresa es SODEPORTC SAS NIT 901183507.
-Analiza este documento (puede ser factura electronica, comprobante bancario, recibo de pago, transferencia, extracto, nomina u otro documento financiero).
+Analiza este documento y extrae los datos.
 
-REGLAS IMPORTANTES:
-- Si el documento es un comprobante de pago bancario (AV Villas, Bancolombia, Davivienda, etc): tipo="Comprobante de Egreso", categoria="Gasto", proveedor=nombre del beneficiario
+REGLAS IMPORTANTES (aplica en orden):
+- Si el documento contiene las palabras "Archivos Cargados", "Resumen de Archivos Cargados", "Pagos a Terceros" o "Tipo Archivo: Pagos a Terceros": tipo="Comprobante de Egreso", categoria="Gasto", proveedor=valor exacto del campo "Nombre Beneficiario" (NUNCA uses el nombre de la empresa SODEPORTC), valor=numero entero del campo "Valor Total Archivo" sin signos ni comas
+- Si el documento es un comprobante de pago bancario (transferencia, consignacion): tipo="Comprobante de Egreso", categoria="Gasto", proveedor=nombre del beneficiario
 - Si SODEPORTC SAS es el EMISOR de la factura: tipo="Factura de Venta", categoria="Factura de Venta", proveedor=nombre del cliente que recibe
 - Si SODEPORTC SAS es quien RECIBE la factura: tipo="Factura de Compra", categoria="Factura de Compra", proveedor=nombre de quien emite
 - Si es nomina o pago a empleado: tipo="Nomina", categoria="Nomina"
-- Si es extracto bancario: tipo="Extracto Bancario", categoria="Extracto Bancario"
-- Si el documento es un "Resumen de Archivos Cargados" o "Archivos Cargados" de AV Villas, Bancolombia u otro banco: 
-  tipo = "Comprobante de Egreso", 
-  categoria = "Gasto",
-  proveedor = valor del campo "Nombre Beneficiario" o "Nombre Archivo",
-  valor = valor del campo "Valor Total Archivo"
+- Si es extracto bancario con movimientos de debito y credito: tipo="Extracto Bancario", categoria="Extracto Bancario"
 - NUNCA respondas con null. Si no encuentras un dato usa "" para texto y 0 para numeros.
-- El valor debe ser el monto total de la transaccion como numero entero sin puntos ni comas.
+- El valor debe ser el monto total como numero entero sin puntos ni comas.
 
 Responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
 {
-  "proveedor": "nombre de la contraparte (cliente, proveedor o beneficiario)",
-  "nit": "NIT o cedula de la contraparte sin digito verificacion",
+  "proveedor": "nombre de la contraparte o beneficiario",
+  "nit": "NIT o cedula sin digito verificacion",
   "fecha": "fecha en formato YYYY-MM-DD",
   "valor": numero entero del valor total,
   "iva": numero entero del IVA o 0,
@@ -104,41 +100,40 @@ Responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
       datosExtraidos = {}
     }
 
-    // No guardar si no hay datos utiles
     const sinDatos = !datosExtraidos.proveedor && (!datosExtraidos.valor || datosExtraidos.valor === 0)
     if (sinDatos) {
       console.log('Documento sin datos utiles, no se guarda:', nombre)
       return NextResponse.json({ success: false, error: 'No se pudieron extraer datos del documento' })
     }
-// Verificar duplicado por numero_factura
-if (datosExtraidos.numero_factura) {
-  const { data: dupNumero } = await supabaseAdmin
-    .from('facturas')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('numero_factura', datosExtraidos.numero_factura)
-    .maybeSingle()
 
-  if (dupNumero) {
-    console.log('Duplicado por numero_factura:', datosExtraidos.numero_factura)
-    return NextResponse.json({ success: false, error: 'Factura duplicada: ' + datosExtraidos.numero_factura })
-  }
-}
+    // Verificar duplicado por numero_factura
+    if (datosExtraidos.numero_factura) {
+      const { data: dupNumero } = await supabaseAdmin
+        .from('facturas')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('numero_factura', datosExtraidos.numero_factura)
+        .maybeSingle()
+      if (dupNumero) {
+        console.log('Duplicado por numero_factura:', datosExtraidos.numero_factura)
+        return NextResponse.json({ success: false, error: 'Factura duplicada: ' + datosExtraidos.numero_factura })
+      }
+    }
 
-// Verificar duplicado por proveedor + fecha + valor
-const { data: duplicado } = await supabaseAdmin
-  .from('facturas')
-  .select('id')
-  .eq('user_id', userId)
-  .eq('proveedor', datosExtraidos.proveedor)
-  .eq('valor', datosExtraidos.valor)
-  .eq('fecha', datosExtraidos.fecha)
-  .maybeSingle()
+    // Verificar duplicado por proveedor + fecha + valor
+    const { data: duplicado } = await supabaseAdmin
+      .from('facturas')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('proveedor', datosExtraidos.proveedor)
+      .eq('valor', datosExtraidos.valor)
+      .eq('fecha', datosExtraidos.fecha)
+      .maybeSingle()
+    if (duplicado) {
+      console.log('Duplicado por proveedor+fecha+valor')
+      return NextResponse.json({ success: false, error: 'Documento duplicado, ya existe en ContaBot' })
+    }
 
-if (duplicado) {
-  console.log('Duplicado por proveedor+fecha+valor')
-  return NextResponse.json({ success: false, error: 'Documento duplicado, ya existe en ContaBot' })
-}
     // Subir archivo a Supabase Storage
     let archivo_url = null
     if (archivo) {
