@@ -30,46 +30,46 @@ export async function POST(request: NextRequest) {
             contentBlock,
             {
               type: 'text',
-              text: `Eres un auxiliar contable colombiano experto. Analiza este documento y extrae los datos.
+              text: `Eres un auxiliar contable colombiano experto. La empresa es SODEPORTC SAS NIT 901183507.
+Analiza este documento y extrae los datos.
 
-PASO 1 - Identifica el tipo de documento:
-- "Factura Electronica": tiene CUFE, prefijo DIAN, codigo QR oficial
-- "Tiquete POS": recibo de caja registradora, sin CUFE, sin QR DIAN
-- "Recibo de Peaje": cobro de peaje en carretera
-- "Comprobante Bancario": transferencia, pago a terceros, extracto bancario
-- "Comprobante de Egreso": recibo de pago interno
-- "Nomina": liquidacion de nomina o pago de salario
-- "Otro": cualquier otro documento
+PASO 1 - Identifica el tipo de documento (tipo_documento):
+- Si contiene "Archivos Cargados", "Pagos a Terceros" o "Tipo Archivo: Pagos a Terceros": tipo_documento="Comprobante de Pago a Terceros"
+- Si es recibo de caja registradora sin CUFE ni QR DIAN: tipo_documento="Tiquete POS"
+- Si tiene CUFE y QR DIAN: tipo_documento="Factura Electronica"
+- Si es recibo de peaje: tipo_documento="Recibo de Peaje"
+- Si es transferencia o consignacion bancaria: tipo_documento="Comprobante Bancario"
+- Si es extracto con movimientos debito y credito: tipo_documento="Extracto Bancario"
+- Si es nomina o pago de salario: tipo_documento="Nomina"
+- Otros: tipo_documento="Otro"
 
-PASO 2 - Clasifica la categoria:
-- "Factura de Venta": tu empresa emite y cobra a un cliente
-- "Factura de Compra": tu empresa compra bienes a un proveedor
-- "Gasto": servicios (gasolina, peajes, servicios publicos, arriendo, telefonia, internet, seguros, mantenimiento, papeleria, honorarios)
-- "Nomina": pagos de salario
-- "Extracto Bancario": movimientos bancarios
+PASO 2 - Clasifica categoria y proveedor:
+- Si tipo_documento es "Comprobante de Pago a Terceros": categoria="Gasto", tipo="Factura de Compra", proveedor=valor del campo "Nombre Beneficiario" (NUNCA uses SODEPORTC como proveedor)
+- Si tipo_documento es "Tiquete POS": categoria="Gasto", tipo="Factura de Compra", proveedor=nombre del establecimiento
+- Si tipo_documento es "Recibo de Peaje": categoria="Gasto", tipo="Factura de Compra", proveedor=nombre del peaje
+- Si tipo_documento es "Comprobante Bancario": categoria="Gasto", tipo="Factura de Compra", proveedor=nombre del beneficiario
+- Si SODEPORTC SAS EMITE la factura: categoria="Factura de Venta", tipo="Factura de Venta", proveedor=nombre del cliente
+- Si SODEPORTC SAS RECIBE la factura: categoria="Factura de Compra", tipo="Factura de Compra", proveedor=nombre de quien emite
+- Si es servicio publico, arriendo, telefonia, internet, seguro: categoria="Gasto", tipo="Factura de Compra"
+- Si es nomina: categoria="Nomina", tipo="Factura de Compra"
 
-PASO 3 - Mapeo PUC automatico:
-- Si el documento es de gasolina o combustible: cuenta_puc = "519535 - Combustibles y lubricantes"
-- Si el documento es de peaje: cuenta_puc = "519545 - Peajes"
-- Si es nomina: cuenta_puc = "510506 - Salarios"
-- Si es servicios publicos: cuenta_puc = "528505 - Servicios publicos"
-- Si es arriendo: cuenta_puc = "529010 - Arrendamientos"
-- Otros gastos: cuenta_puc = "519595 - Otros gastos"
-- Factura de Compra: cuenta_puc = "143505 - Mercancias"
-- Factura de Venta: cuenta_puc = "130505 - Clientes"
+PASO 3 - Mapeo PUC:
+- Gasolina o combustible: cuenta_puc="519535 - Combustibles y lubricantes"
+- Peaje: cuenta_puc="519545 - Peajes"
+- Nomina o salario: cuenta_puc="510506 - Salarios"
+- Servicios publicos: cuenta_puc="528505 - Servicios publicos"
+- Arriendo: cuenta_puc="529010 - Arrendamientos"
+- Factura de Compra general: cuenta_puc="143505 - Mercancias"
+- Factura de Venta: cuenta_puc="130505 - Clientes"
+- Otros gastos: cuenta_puc="519595 - Otros gastos"
 
-PASO 4 - Alerta si es Tiquete POS:
-- Si tipo_documento es "Tiquete POS": alerta = "⚠️ Este es un Tiquete POS. Solicita la Factura Electronica al proveedor para que el contador pueda descontar el IVA y los impuestos."
-- Si no: alerta = ""
+PASO 4 - Alerta:
+- Si tipo_documento es "Tiquete POS": alerta="⚠️ Este es un Tiquete POS. Solicita la Factura Electronica al proveedor para que el contador pueda descontar el IVA."
+- Otros: alerta=""
 
-REGLAS PARA proveedor:
-- Si es Factura de Venta: proveedor = nombre del cliente (quien recibe)
-- Si es Factura de Compra o Gasto: proveedor = nombre de quien emite
-
-REGLAS PARA tipo:
-- Factura de Venta -> tipo = "Factura de Venta"
-- Factura de Compra -> tipo = "Factura de Compra"  
-- Gasto -> tipo = "Factura de Compra"
+PASO 5 - Combustible:
+- Si el documento es de gasolina o ACPM: combustible="Gasolina" o combustible="Diesel"
+- Otros: combustible=""
 
 Responde SOLO con este JSON sin texto adicional ni backticks:
 {
@@ -81,9 +81,9 @@ Responde SOLO con este JSON sin texto adicional ni backticks:
   "tipo": "Factura de Venta o Factura de Compra",
   "categoria": "categoria segun reglas",
   "tipo_documento": "tipo segun paso 1",
-  "combustible": "Diesel o Gasolina o vacio si no aplica",
+  "combustible": "Diesel o Gasolina o vacio",
   "cuenta_puc": "codigo y nombre segun mapeo",
-  "alerta": "mensaje de alerta o vacio"
+  "alerta": "mensaje o vacio"
 }`
             }
           ]
