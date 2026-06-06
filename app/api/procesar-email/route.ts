@@ -117,6 +117,7 @@ if (archivo) {
       categoria: datosExtraidos.categoria || 'Factura de Venta',
       estado: 'Pendiente',
       numero_factura: datosExtraidos.numero_factura || null,
+      archivo_url,
     })
 
     if (error) {
