@@ -175,6 +175,10 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
     categoria: datosFact.categoria,
     estado: 'Pendiente',
     archivo_url,
+    tipo_documento: datosFact.tipo_documento || null,
+    combustible: datosFact.combustible || null,
+    cuenta_puc: datosFact.cuenta_puc || null,
+    alerta: datosFact.alerta || null,
   })
   if (error) {
     setMensaje('Error guardando: ' + error.message)
@@ -433,7 +437,10 @@ const facturasFiltradas = facturas.filter(f => {
                     <div><p className="text-xs text-slate-500">Valor</p><p className="font-medium text-emerald-700">${datosFact.valor?.toLocaleString()}</p></div>
                     <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium text-slate-900">${datosFact.iva?.toLocaleString()}</p></div>
                     <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium text-slate-900">{datosFact.descripcion}</p></div>
-                    <div><p className="text-xs text-slate-500">Tipo</p><p className="font-medium text-slate-900">{datosFact.tipo}</p></div>
+                    <div><p className="text-xs text-slate-500">Tipo Documento</p><p className="font-medium text-slate-900">{datosFact.tipo_documento || datosFact.tipo}</p></div>
+{datosFact.combustible && <div><p className="text-xs text-slate-500">Combustible</p><p className="font-medium text-slate-900">⛽ {datosFact.combustible}</p></div>}
+{datosFact.cuenta_puc && <div className="col-span-2"><p className="text-xs text-slate-500">Cuenta PUC</p><p className="font-medium text-slate-900">📒 {datosFact.cuenta_puc}</p></div>}
+{datosFact.alerta && <div className="col-span-2 bg-yellow-50 border border-yellow-300 rounded-xl p-3"><p className="text-yellow-800 text-sm font-medium">{datosFact.alerta}</p></div>}
                   </div>
                   <button onClick={handleGuardar} disabled={guardando}
                     className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
