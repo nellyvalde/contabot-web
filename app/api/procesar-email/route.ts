@@ -58,6 +58,11 @@ REGLAS IMPORTANTES:
 - Si SODEPORTC SAS es quien RECIBE la factura: tipo="Factura de Compra", categoria="Factura de Compra", proveedor=nombre de quien emite
 - Si es nomina o pago a empleado: tipo="Nomina", categoria="Nomina"
 - Si es extracto bancario: tipo="Extracto Bancario", categoria="Extracto Bancario"
+- Si el documento es un "Resumen de Archivos Cargados" o "Archivos Cargados" de AV Villas, Bancolombia u otro banco: 
+  tipo = "Comprobante de Egreso", 
+  categoria = "Gasto",
+  proveedor = valor del campo "Nombre Beneficiario" o "Nombre Archivo",
+  valor = valor del campo "Valor Total Archivo"
 - NUNCA respondas con null. Si no encuentras un dato usa "" para texto y 0 para numeros.
 - El valor debe ser el monto total de la transaccion como numero entero sin puntos ni comas.
 
