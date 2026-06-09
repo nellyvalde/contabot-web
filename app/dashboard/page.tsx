@@ -231,7 +231,30 @@ if (duplicado) {
   }
   setGuardando(false)
 }
-
+  const handleGuardarNomina = async () => {
+  if (!user || !nominaForm.nombre_empleado || !nominaForm.sueldo_pagado) return
+  setGuardandoNomina(true)
+  const sueldo = parseFloat(nominaForm.sueldo_pagado)
+  const ibc = parseFloat(nominaForm.ibc_pila || '0')
+  const diferencia = sueldo - ibc
+  const { error } = await supabase.from('NOMINA').insert({
+    user_id: user.id,
+    nombre_empleado: nominaForm.nombre_empleado,
+    sueldo_pagado: sueldo,
+    ibc_pila: ibc,
+    diferencia,
+    fecha_pago: nominaForm.fecha_pago,
+    notas: nominaForm.notas,
+  })
+  if (error) {
+    setMensajeNomina('Error: ' + error.message)
+  } else {
+    setMensajeNomina('Pago de nomina guardado correctamente')
+    setNominaForm({ nombre_empleado: '', sueldo_pagado: '', ibc_pila: '', fecha_pago: '', notas: '' })
+    cargarNominas(user.id)
+  }
+  setGuardandoNomina(false)
+}
   const handleRegistrarPago = async () => {
     if (!pagoModal) return
     await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
