@@ -1437,7 +1437,90 @@ const facturasFiltradas = facturas.filter(f => {
             )}
           </div>
         )}
-
+        {seccion === 'nomina' && (
+  <div>
+    <h2 className="text-2xl font-bold text-slate-800 mb-6">Nómina</h2>
+    <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+      <h3 className="text-lg font-semibold text-slate-800 mb-4">Registrar Pago de Nómina</h3>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-xs text-slate-500 mb-1">Nombre Empleado *</p>
+          <input type="text" value={nominaForm.nombre_empleado} onChange={e => setNominaForm(p => ({...p, nombre_empleado: e.target.value}))}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ej: Juan Perez" />
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-1">Fecha de Pago *</p>
+          <input type="date" value={nominaForm.fecha_pago} onChange={e => setNominaForm(p => ({...p, fecha_pago: e.target.value}))}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-1">Sueldo Pagado *</p>
+          <input type="number" value={nominaForm.sueldo_pagado} onChange={e => setNominaForm(p => ({...p, sueldo_pagado: e.target.value}))}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
+        </div>
+        <div>
+          <p className="text-xs text-slate-500 mb-1">IBC PILA (Base Seguridad Social)</p>
+          <input type="number" value={nominaForm.ibc_pila} onChange={e => setNominaForm(p => ({...p, ibc_pila: e.target.value}))}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="0" />
+        </div>
+        <div className="col-span-2">
+          <p className="text-xs text-slate-500 mb-1">Notas</p>
+          <input type="text" value={nominaForm.notas} onChange={e => setNominaForm(p => ({...p, notas: e.target.value}))}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Ej: Quincena mayo, auxilio transporte..." />
+        </div>
+      </div>
+      {nominaForm.sueldo_pagado && nominaForm.ibc_pila && parseFloat(nominaForm.sueldo_pagado) !== parseFloat(nominaForm.ibc_pila) && (
+        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded-xl">
+          <p className="text-yellow-800 text-sm font-medium">⚠️ Pago No Prestacional: diferencia de ${(parseFloat(nominaForm.sueldo_pagado) - parseFloat(nominaForm.ibc_pila)).toLocaleString()} — este valor no aplica para base de seguridad social.</p>
+        </div>
+      )}
+      {mensajeNomina && <div className="mt-4 p-3 bg-slate-50 rounded-xl"><p className="text-slate-700 text-sm">{mensajeNomina}</p></div>}
+      <button onClick={handleGuardarNomina} disabled={guardandoNomina}
+        className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
+        {guardandoNomina ? 'Guardando...' : 'Guardar Pago de Nomina'}
+      </button>
+    </div>
+    <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <h3 className="text-lg font-semibold text-slate-800 mb-4">Historial de Pagos</h3>
+      {nominas.length === 0 ? (
+        <div className="text-center py-10 text-slate-400"><p className="text-4xl mb-3">👷</p><p>No hay pagos registrados aun.</p></div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b">
+              <th className="pb-2">Empleado</th>
+              <th className="pb-2">Fecha Pago</th>
+              <th className="pb-2">Sueldo Pagado</th>
+              <th className="pb-2">IBC PILA</th>
+              <th className="pb-2">Diferencia</th>
+              <th className="pb-2">Notas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nominas.map((n) => (
+              <tr key={n.id} className="border-b last:border-0 hover:bg-slate-50">
+                <td className="py-3 font-medium">{n.nombre_empleado}</td>
+                <td className="py-3 text-slate-500">{n.fecha_pago}</td>
+                <td className="py-3 text-emerald-700 font-medium">${n.sueldo_pagado?.toLocaleString()}</td>
+                <td className="py-3 text-slate-700">${n.ibc_pila?.toLocaleString()}</td>
+                <td className="py-3">
+                  {n.diferencia > 0 ? (
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                      Pago No Prestacional: ${n.diferencia?.toLocaleString()}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Correcto</span>
+                  )}
+                </td>
+                <td className="py-3 text-slate-500">{n.notas || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </div>
+)}
         {['reportes', 'configuracion'].includes(seccion) && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
