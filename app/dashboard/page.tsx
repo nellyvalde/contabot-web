@@ -26,6 +26,7 @@ const menuItems = [
   { id: 'revision',      icon: '🤖', label: 'Revision IA' },
   { id: 'clientes',      icon: '👥', label: 'Clientes' },
   { id: 'proveedores',   icon: '🏭', label: 'Proveedores' },
+  { id: 'nomina', icon: '👷', label: 'Nomina' },
   { id: 'reportes',      icon: '📈', label: 'Reportes' },
   { id: 'configuracion', icon: '⚙️', label: 'Configuracion' },
 ]
@@ -73,6 +74,10 @@ export default function Dashboard() {
   const [editandoCliente, setEditandoCliente] = useState(false)
   const [datosEditCliente, setDatosEditCliente] = useState<any>({})
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
+  const [nominas, setNominas] = useState<any[]>([])
+const [nominaForm, setNominaForm] = useState({ nombre_empleado: '', sueldo_pagado: '', ibc_pila: '', fecha_pago: '', notas: '' })
+const [guardandoNomina, setGuardandoNomina] = useState(false)
+const [mensajeNomina, setMensajeNomina] = useState('')
   const [facturaViewer, setFacturaViewer] = useState<any>(null)
 const [archivoFile, setArchivoFile] = useState<File | null>(null)
 const [filtroDoc, setFiltroDoc] = useState('todos')
@@ -91,6 +96,7 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
         setUser(data.user)
         cargarFacturas(data.user.id)
         cargarClientesDB(data.user.id)
+        cargarNominas(data.user.id)
       }
     })
   }, [])
@@ -103,7 +109,10 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
       .order('created_at', { ascending: false })
     if (data) setFacturas(data)
   }
-
+    const cargarNominas = async (userId: string) => {
+  const { data } = await supabase.from('NOMINA').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+  if (data) setNominas(data)
+}
   const cargarClientesDB = async (userId: string) => {
     const { data } = await supabase.from('clientes').select('*').eq('user_id', userId)
     if (data) setClientesDB(data)
