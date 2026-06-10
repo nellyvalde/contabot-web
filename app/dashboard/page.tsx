@@ -100,8 +100,8 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
         cargarFacturas(data.user.id)
         cargarClientesDB(data.user.id)
         cargarNominas(data.user.id)
+        cargarNominaProgramada(data.user.id)
       }
-      cargarNominaProgramada(data.user.id)
     })
   }, [])
 
