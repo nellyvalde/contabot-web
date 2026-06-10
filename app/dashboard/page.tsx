@@ -129,7 +129,12 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const workbook = XLSX.read(buffer, { type: 'array' })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
-    const dataRows = rows.filter((r: any[]) => r[2] && typeof r[2] === 'string' && r[2].trim().length > 3)
+    const dataRows = rows.filter((r: any[]) => 
+  r[2] && 
+  typeof r[2] === 'string' && 
+  r[2].trim().length > 3 &&
+  r[2].trim().toLowerCase() !== 'nombre del empleado'
+)
     const registros = dataRows.map((r: any[]) => ({
       user_id: user.id,
       nombre_empleado: r[2] || '',
