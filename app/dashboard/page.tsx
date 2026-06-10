@@ -76,6 +76,9 @@ export default function Dashboard() {
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
   const [nominas, setNominas] = useState<any[]>([])
 const [nominaForm, setNominaForm] = useState({ nombre_empleado: '', sueldo_pagado: '', ibc_pila: '', fecha_pago: '', notas: '' })
+  const [nominaProgramada, setNominaProgramada] = useState<any[]>([])
+const [cargandoExcel, setCargandoExcel] = useState(false)
+const [mensajeExcel, setMensajeExcel] = useState('')
 const [guardandoNomina, setGuardandoNomina] = useState(false)
 const [mensajeNomina, setMensajeNomina] = useState('')
   const [facturaViewer, setFacturaViewer] = useState<any>(null)
@@ -98,6 +101,7 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
         cargarClientesDB(data.user.id)
         cargarNominas(data.user.id)
       }
+      cargarNominaProgramada(data.user.id)
     })
   }, [])
 
@@ -109,6 +113,57 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
       .order('created_at', { ascending: false })
     if (data) setFacturas(data)
   }
+  const cargarNominaProgramada = async (userId: string) => {
+  const { data } = await supabase.from('nomina_programada').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+  if (data) setNominaProgramada(data)
+}
+
+const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0]
+  if (!file || !user) return
+  setCargandoExcel(true)
+  setMensajeExcel('Leyendo Excel...')
+  try {
+    const XLSX = await import('xlsx')
+    const buffer = await file.arrayBuffer()
+    const workbook = XLSX.read(buffer, { type: 'array' })
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+    const dataRows = rows.filter((r: any[]) => r[2] && typeof r[2] === 'string' && r[2].trim().length > 3)
+    const registros = dataRows.map((r: any[]) => ({
+      user_id: user.id,
+      nombre_empleado: r[2] || '',
+      cedula: String(r[3] || ''),
+      area: r[4] || '',
+      sueldo_base: parseFloat(r[5]) || 0,
+      auxilio_transporte: parseFloat(r[6]) || 0,
+      dias_trabajados: parseFloat(r[7]) || 0,
+      bonificaciones: parseFloat(r[10]) || 0,
+      total_devengado: parseFloat(r[11]) || 0,
+      prima: parseFloat(r[14]) || 0,
+      vacaciones: parseFloat(r[16]) || 0,
+      prestamo: parseFloat(r[12]) || 0,
+      descuento: parseFloat(r[13]) || 0,
+      pension: parseFloat(r[19]) || 0,
+      salud: parseFloat(r[20]) || 0,
+      total_deducciones: parseFloat(r[21]) || 0,
+      neto_pagar: parseFloat(r[22]) || 0,
+      observaciones: r[23] || '',
+      estado: 'Pendiente de Pago',
+      fecha_carga: new Date().toISOString().slice(0, 10),
+    }))
+    const { error } = await supabase.from('nomina_programada').insert(registros)
+    if (error) {
+      setMensajeExcel('Error guardando: ' + error.message)
+    } else {
+      setMensajeExcel(`✅ ${registros.length} empleados cargados correctamente`)
+      cargarNominaProgramada(user.id)
+    }
+  } catch (err) {
+    setMensajeExcel('Error leyendo el Excel. Verifica el formato.')
+  }
+  setCargandoExcel(false)
+}
     const cargarNominas = async (userId: string) => {
   const { data } = await supabase.from('NOMINA').select('*').eq('user_id', userId).order('created_at', { ascending: false })
   if (data) setNominas(data)
@@ -1474,6 +1529,49 @@ const facturasFiltradas = facturas.filter(f => {
           <p className="text-yellow-800 text-sm font-medium">⚠️ Pago No Prestacional: diferencia de ${(parseFloat(nominaForm.sueldo_pagado) - parseFloat(nominaForm.ibc_pila)).toLocaleString()} — este valor no aplica para base de seguridad social.</p>
         </div>
       )}
+      <div className="mt-6 pt-6 border-t border-slate-200">
+  <h3 className="text-lg font-semibold text-slate-800 mb-3">📊 Importar Nómina desde Excel</h3>
+  <div className="border-2 border-dashed border-blue-200 rounded-xl p-6 text-center bg-blue-50">
+    <p className="text-slate-600 text-sm mb-3">Sube tu Excel de nómina SODEPORTC (.xlsx) — se mapearán automáticamente todos los campos</p>
+    <label className="cursor-pointer bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-xl text-sm">
+      {cargandoExcel ? 'Procesando...' : '📂 Subir Excel de Nómina'}
+      <input type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="hidden" disabled={cargandoExcel} />
+    </label>
+  </div>
+  {mensajeExcel && <div className="mt-3 p-3 bg-slate-50 rounded-xl"><p className="text-sm text-slate-700">{mensajeExcel}</p></div>}
+  {nominaProgramada.length > 0 && (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-slate-500 border-b">
+            <th className="pb-2">Empleado</th>
+            <th className="pb-2">Cédula</th>
+            <th className="pb-2">Área</th>
+            <th className="pb-2">Sueldo Base</th>
+            <th className="pb-2">Bonificaciones</th>
+            <th className="pb-2">Neto a Pagar</th>
+            <th className="pb-2">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {nominaProgramada.map((n) => (
+            <tr key={n.id} className="border-b last:border-0 hover:bg-slate-50">
+              <td className="py-2 font-medium">{n.nombre_empleado}</td>
+              <td className="py-2 text-slate-500">{n.cedula}</td>
+              <td className="py-2 text-slate-500">{n.area}</td>
+              <td className="py-2">${n.sueldo_base?.toLocaleString()}</td>
+              <td className="py-2">${n.bonificaciones?.toLocaleString()}</td>
+              <td className="py-2 text-emerald-700 font-medium">${n.neto_pagar?.toLocaleString()}</td>
+              <td className="py-2">
+                <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">{n.estado}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</div>
       {mensajeNomina && <div className="mt-4 p-3 bg-slate-50 rounded-xl"><p className="text-slate-700 text-sm">{mensajeNomina}</p></div>}
       <button onClick={handleGuardarNomina} disabled={guardandoNomina}
         className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
