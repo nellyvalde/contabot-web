@@ -1543,6 +1543,16 @@ const facturasFiltradas = facturas.filter(f => {
       <input type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="hidden" disabled={cargandoExcel} />
     </label>
   </div>
+   {nominaProgramada.length > 0 && (
+  <button onClick={async () => {
+    if (!confirm('¿Seguro que deseas limpiar toda la nómina cargada?')) return
+    await supabase.from('nomina_programada').delete().eq('user_id', user.id)
+    setNominaProgramada([])
+    setMensajeExcel('🗑 Nómina limpiada. Ya puedes subir el Excel del nuevo mes.')
+  }} className="mt-3 w-full border border-red-300 text-red-600 hover:bg-red-50 py-2 rounded-xl text-sm font-medium">
+    🗑 Limpiar nómina cargada (nuevo mes)
+  </button>
+  )}     
   {mensajeExcel && <div className="mt-3 p-3 bg-slate-50 rounded-xl"><p className="text-sm text-slate-700">{mensajeExcel}</p></div>}
   {nominaProgramada.length > 0 && (
     <div className="mt-4 overflow-x-auto">
