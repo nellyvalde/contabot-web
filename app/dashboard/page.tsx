@@ -1553,6 +1553,7 @@ const facturasFiltradas = facturas.filter(f => {
             <th className="pb-2">Cédula</th>
             <th className="pb-2">Área</th>
             <th className="pb-2">Sueldo Base</th>
+            <th className="pb-2">Aux. Transporte</th>
             <th className="pb-2">Bonificaciones</th>
             <th className="pb-2">Neto a Pagar</th>
             <th className="pb-2">Estado</th>
@@ -1565,6 +1566,7 @@ const facturasFiltradas = facturas.filter(f => {
               <td className="py-2 text-slate-500">{n.cedula}</td>
               <td className="py-2 text-slate-500">{n.area}</td>
               <td className="py-2">${n.sueldo_base?.toLocaleString()}</td>
+              <td className="py-2">${n.auxilio_transporte?.toLocaleString()}</td>
               <td className="py-2">${n.bonificaciones?.toLocaleString()}</td>
               <td className="py-2 text-emerald-700 font-medium">${n.neto_pagar?.toLocaleString()}</td>
               <td className="py-2">
