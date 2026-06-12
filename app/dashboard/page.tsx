@@ -171,7 +171,7 @@ if (!matchNombre) {
   const { data: alterno } = await supabase
     .from('nombres_alternos')
     .select('nombre_empleado')
-    .ilike('nombre_alterno', normalizarNombre(nombrePDF).toUpperCase())
+    .ilike('nombre_alterno', nombrePDF.trim())
     .maybeSingle()
   if (alterno) {
     matchAlterno = (empleados || []).find((emp: any) =>
