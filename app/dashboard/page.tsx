@@ -181,6 +181,8 @@ if (!matchNombre) {
         normalizarNombre(alterno.nombre_empleado)
       )
     )
+    console.log('👤 matchAlterno:', matchAlterno)
+console.log('📊 empleados:', (empleados || []).map((e:any) => e.nombre_empleado))
   }
 }
 const match = matchNombre || matchAlterno
