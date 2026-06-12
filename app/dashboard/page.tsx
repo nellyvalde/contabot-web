@@ -145,8 +145,7 @@ const handleConciliacion = async (e: React.ChangeEvent<HTMLInputElement>) => {
         .from('nomina_programada')
         .select('*')
         .eq('user_id', user.id)
-        .eq('periodo', periodoConciliacion)
-
+      
       // Subir archivo a Storage
       let archivo_url = null
       const bytes = await file.arrayBuffer()
