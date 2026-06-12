@@ -191,15 +191,15 @@ if (match) {
             estado: 'Pagado',
             archivo_url,
             notas: datos.proveedor !== match.nombre_empleado ? `Pago recibido a nombre de: ${datos.proveedor}` : match.notas
-          }).eq('id', matchNombre.id)
-          resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + matchNombre.nombre_empleado + ' — Pagado correctamente' })
+          }).eq('id', match.id)
+          resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + match.nombre_empleado + ' — Pagado correctamente' })
         } else {
           await supabase.from('nomina_programada').update({
             estado: 'Revisar Valor',
             archivo_url,
             notas: `PDF: $${valorPDF.toLocaleString()} | Nómina: $${valorEmp.toLocaleString()} | Nombre PDF: ${datos.proveedor}`
-          }).eq('id', matchNombre.id)
-          resultados.push({ archivo: file.name, estado: 'revisar', mensaje: '🟠 ' + matchNombre.nombre_empleado + ' — Revisar valor: PDF $' + valorPDF.toLocaleString() + ' vs Nómina $' + valorEmp.toLocaleString() })
+          }).eq('id', match.id)
+          resultados.push({ archivo: file.name, estado: 'revisar', mensaje: '🟠 ' + match.nombre_empleado + ' — Revisar valor: PDF $' + valorPDF.toLocaleString() + ' vs Nómina $' + valorEmp.toLocaleString() })
         }
       } else {
         // 2. Buscar por valor (+/- $2)
