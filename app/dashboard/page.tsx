@@ -79,6 +79,10 @@ const [nominaForm, setNominaForm] = useState({ nombre_empleado: '', sueldo_pagad
   const [nominaProgramada, setNominaProgramada] = useState<any[]>([])
 const [cargandoExcel, setCargandoExcel] = useState(false)
 const [mensajeExcel, setMensajeExcel] = useState('')
+  const [procesandoConciliacion, setProcesandoConciliacion] = useState(false)
+const [resultadosConciliacion, setResultadosConciliacion] = useState<any[]>([])
+const [periodoConciliacion, setPeriodoConciliacion] = useState('MAYO 2026')
+const [visorNominaUrl, setVisorNominaUrl] = useState<string | null>(null)
 const [guardandoNomina, setGuardandoNomina] = useState(false)
 const [mensajeNomina, setMensajeNomina] = useState('')
   const [facturaViewer, setFacturaViewer] = useState<any>(null)
@@ -117,7 +121,70 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
   const { data } = await supabase.from('nomina_programada').select('*').eq('user_id', userId).order('created_at', { ascending: false })
   if (data) setNominaProgramada(data)
 }
+const normalizarNombre = (nombre: string) => 
+  nombre?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, '').trim() || ''
 
+const handleConciliacion = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = Array.from(e.target.files || [])
+  if (!files.length || !user) return
+  setProcesandoConciliacion(true)
+  setResultadosConciliacion([])
+  const resultados: any[] = []
+
+  for (const file of files) {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
+      const data = await res.json()
+      const datos = data.datos || {}
+      const nombrePDF = normalizarNombre(datos.proveedor || '')
+      const valorPDF = parseFloat(datos.valor) || 0
+
+      const { data: empleados } = await supabase
+        .from('nomina_programada')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('periodo', periodoConciliacion)
+
+      const match = (empleados || []).find((emp: any) => {
+        const nombreEmp = normalizarNombre(emp.nombre_empleado || '')
+        const palabrasPDF = nombrePDF.split(' ').filter(p => p.length > 2)
+        const coincideNombre = palabrasPDF.some(p => nombreEmp.includes(p))
+        return coincideNombre
+      })
+
+      let archivo_url = null
+      const bytes = await file.arrayBuffer()
+      const buffer = new Uint8Array(bytes)
+      const path = `${user.id}/nomina/${Date.now()}_${file.name}`
+      const { error: uploadError } = await supabase.storage.from('facturas').upload(path, buffer, { contentType: 'application/pdf' })
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from('facturas').getPublicUrl(path)
+        archivo_url = urlData.publicUrl
+      }
+
+      if (!match) {
+        resultados.push({ archivo: file.name, estado: 'no_encontrado', mensaje: '⚠️ Comprobante no reconocido: ' + (datos.proveedor || 'sin nombre') })
+      } else {
+        const valorEmp = parseFloat(match.neto_pagar) || 0
+        const diferencia = Math.abs(valorPDF - valorEmp)
+        if (diferencia <= 2) {
+          await supabase.from('nomina_programada').update({ estado: 'Pagado', archivo_url }).eq('id', match.id)
+          resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + match.nombre_empleado + ' — Pagado correctamente' })
+        } else {
+          await supabase.from('nomina_programada').update({ estado: 'Revisar Valor', archivo_url }).eq('id', match.id)
+          resultados.push({ archivo: file.name, estado: 'revisar', mensaje: '🟠 ' + match.nombre_empleado + ' — Revisar valor: PDF $' + valorPDF.toLocaleString() + ' vs Nómina $' + valorEmp.toLocaleString() })
+        }
+      }
+    } catch {
+      resultados.push({ archivo: file.name, estado: 'error', mensaje: '❌ Error procesando: ' + file.name })
+    }
+  }
+  setResultadosConciliacion(resultados)
+  cargarNominaProgramada(user.id)
+  setProcesandoConciliacion(false)
+}
 const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0]
   if (!file || !user) return
@@ -1543,6 +1610,35 @@ const facturasFiltradas = facturas.filter(f => {
       <input type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="hidden" disabled={cargandoExcel} />
     </label>
   </div>
+   <div className="mt-6 pt-6 border-t border-slate-200">
+  <div className="flex items-center justify-between mb-3">
+    <h3 className="text-lg font-semibold text-slate-800">🏦 Conciliación de Comprobantes</h3>
+    <select value={periodoConciliacion} onChange={e => setPeriodoConciliacion(e.target.value)}
+      className="px-3 py-1 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+      <option>MAYO 2026</option>
+      <option>JUNIO 2026</option>
+      <option>JULIO 2026</option>
+    </select>
+  </div>
+  <div className="border-2 border-dashed border-emerald-200 rounded-xl p-6 text-center bg-emerald-50">
+    <p className="text-slate-600 text-sm mb-3">Arrastra aquí los comprobantes de pago bancarios (PDF) — el sistema los conciliará automáticamente</p>
+    <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm">
+      {procesandoConciliacion ? '⏳ Procesando...' : '📎 Subir Comprobantes PDF'}
+      <input type="file" accept=".pdf" multiple onChange={handleConciliacion} className="hidden" disabled={procesandoConciliacion} />
+    </label>
+  </div>
+  {resultadosConciliacion.length > 0 && (
+    <div className="mt-4 space-y-2">
+      {resultadosConciliacion.map((r, i) => (
+        <div key={i} className={`p-3 rounded-xl text-sm ${
+          r.estado === 'pagado' ? 'bg-green-50 text-green-800' :
+          r.estado === 'revisar' ? 'bg-orange-50 text-orange-800' :
+          'bg-red-50 text-red-800'
+        }`}>{r.mensaje}</div>
+      ))}
+    </div>
+  )}
+</div>     
    {nominaProgramada.length > 0 && (
   <button onClick={async () => {
     if (!confirm('¿Seguro que deseas limpiar toda la nómina cargada?')) return
@@ -1567,6 +1663,7 @@ const facturasFiltradas = facturas.filter(f => {
             <th className="pb-2">Bonificaciones</th>
             <th className="pb-2">Neto a Pagar</th>
             <th className="pb-2">Estado</th>
+            <th className="pb-2">Soporte</th>
           </tr>
         </thead>
         <tbody>
@@ -1580,7 +1677,16 @@ const facturasFiltradas = facturas.filter(f => {
               <td className="py-2">${n.bonificaciones?.toLocaleString()}</td>
               <td className="py-2 text-emerald-700 font-medium">${n.neto_pagar?.toLocaleString()}</td>
               <td className="py-2">
-                <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">{n.estado}</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+  n.estado === 'Pagado' ? 'bg-green-100 text-green-700' :
+  n.estado === 'Revisar Valor' ? 'bg-orange-100 text-orange-700' :
+  'bg-yellow-100 text-yellow-700'
+}`}>{n.estado}</span>
+</td>
+<td className="py-2">
+  {n.archivo_url && (
+    <button onClick={() => setVisorNominaUrl(n.archivo_url)} className="text-blue-400 hover:text-blue-600">👁</button>
+  )}
               </td>
             </tr>
           ))}
