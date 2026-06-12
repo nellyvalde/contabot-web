@@ -147,13 +147,7 @@ const handleConciliacion = async (e: React.ChangeEvent<HTMLInputElement>) => {
         .eq('user_id', user.id)
         .eq('periodo', periodoConciliacion)
 
-      const match = (empleados || []).find((emp: any) => {
-        const nombreEmp = normalizarNombre(emp.nombre_empleado || '')
-        const palabrasPDF = nombrePDF.split(' ').filter(p => p.length > 2)
-        const coincideNombre = palabrasPDF.some(p => nombreEmp.includes(p))
-        return coincideNombre
-      })
-
+      // Subir archivo a Storage
       let archivo_url = null
       const bytes = await file.arrayBuffer()
       const buffer = new Uint8Array(bytes)
@@ -164,17 +158,57 @@ const handleConciliacion = async (e: React.ChangeEvent<HTMLInputElement>) => {
         archivo_url = urlData.publicUrl
       }
 
-      if (!match) {
-        resultados.push({ archivo: file.name, estado: 'no_encontrado', mensaje: '⚠️ Comprobante no reconocido: ' + (datos.proveedor || 'sin nombre') })
-      } else {
-        const valorEmp = parseFloat(match.neto_pagar) || 0
+      // 1. Buscar por nombre (coincidencia parcial)
+      const matchNombre = (empleados || []).find((emp: any) => {
+        const nombreEmp = normalizarNombre(emp.nombre_empleado || '')
+        const palabrasPDF = nombrePDF.split(' ').filter((p: string) => p.length > 2)
+        return palabrasPDF.some((p: string) => nombreEmp.includes(p))
+      })
+
+      if (matchNombre) {
+        const valorEmp = parseFloat(matchNombre.neto_pagar) || 0
         const diferencia = Math.abs(valorPDF - valorEmp)
         if (diferencia <= 2) {
-          await supabase.from('nomina_programada').update({ estado: 'Pagado', archivo_url }).eq('id', match.id)
-          resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + match.nombre_empleado + ' — Pagado correctamente' })
+          await supabase.from('nomina_programada').update({
+            estado: 'Pagado',
+            archivo_url,
+            notas: datos.proveedor !== matchNombre.nombre_empleado ? `Pago recibido a nombre de: ${datos.proveedor}` : matchNombre.notas
+          }).eq('id', matchNombre.id)
+          resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + matchNombre.nombre_empleado + ' — Pagado correctamente' })
         } else {
-          await supabase.from('nomina_programada').update({ estado: 'Revisar Valor', archivo_url }).eq('id', match.id)
-          resultados.push({ archivo: file.name, estado: 'revisar', mensaje: '🟠 ' + match.nombre_empleado + ' — Revisar valor: PDF $' + valorPDF.toLocaleString() + ' vs Nómina $' + valorEmp.toLocaleString() })
+          await supabase.from('nomina_programada').update({
+            estado: 'Revisar Valor',
+            archivo_url,
+            notas: `PDF: $${valorPDF.toLocaleString()} | Nómina: $${valorEmp.toLocaleString()} | Nombre PDF: ${datos.proveedor}`
+          }).eq('id', matchNombre.id)
+          resultados.push({ archivo: file.name, estado: 'revisar', mensaje: '🟠 ' + matchNombre.nombre_empleado + ' — Revisar valor: PDF $' + valorPDF.toLocaleString() + ' vs Nómina $' + valorEmp.toLocaleString() })
+        }
+      } else {
+        // 2. Buscar por valor (+/- $2)
+        const matchesValor = (empleados || []).filter((emp: any) => {
+          const valorEmp = parseFloat(emp.neto_pagar) || 0
+          return Math.abs(valorPDF - valorEmp) <= 2
+        })
+
+        if (matchesValor.length === 1) {
+          await supabase.from('nomina_programada').update({
+            estado: 'Pagado',
+            archivo_url,
+            notas: `Pago recibido a nombre de: ${datos.proveedor || 'sin nombre'}`
+          }).eq('id', matchesValor[0].id)
+          resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + matchesValor[0].nombre_empleado + ' — Pagado (coincidencia por valor $' + valorPDF.toLocaleString() + '). Nombre en PDF: ' + (datos.proveedor || 'sin nombre') })
+        } else if (matchesValor.length > 1) {
+          for (const emp of matchesValor) {
+            await supabase.from('nomina_programada').update({
+              estado: 'Confirmar Beneficiario',
+              archivo_url,
+              notas: `Confirmar: PDF a nombre de ${datos.proveedor || 'sin nombre'} por $${valorPDF.toLocaleString()}`
+            }).eq('id', emp.id)
+          }
+          const nombres = matchesValor.map((e: any) => e.nombre_empleado).join(', ')
+          resultados.push({ archivo: file.name, estado: 'revisar', mensaje: '🟠 Confirmar beneficiario — Varios empleados con valor $' + valorPDF.toLocaleString() + ': ' + nombres })
+        } else {
+          resultados.push({ archivo: file.name, estado: 'no_encontrado', mensaje: '⚠️ Comprobante no reconocido — Nombre: ' + (datos.proveedor || 'sin nombre') + ' | Valor: $' + valorPDF.toLocaleString() })
         }
       }
     } catch {
