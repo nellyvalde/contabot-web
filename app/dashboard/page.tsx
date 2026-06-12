@@ -184,13 +184,13 @@ if (!matchNombre) {
 const match = matchNombre || matchAlterno
 
 if (match) {
-        const valorEmp = parseFloat(matchNombre.neto_pagar) || 0
+        const valorEmp = parseFloat(match.neto_pagar) || 0
         const diferencia = Math.abs(valorPDF - valorEmp)
         if (diferencia <= 2) {
           await supabase.from('nomina_programada').update({
             estado: 'Pagado',
             archivo_url,
-            notas: datos.proveedor !== matchNombre.nombre_empleado ? `Pago recibido a nombre de: ${datos.proveedor}` : matchNombre.notas
+            notas: datos.proveedor !== match.nombre_empleado ? `Pago recibido a nombre de: ${datos.proveedor}` : match.notas
           }).eq('id', matchNombre.id)
           resultados.push({ archivo: file.name, estado: 'pagado', mensaje: '✅ ' + matchNombre.nombre_empleado + ' — Pagado correctamente' })
         } else {
