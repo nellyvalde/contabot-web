@@ -168,11 +168,13 @@ const handleConciliacion = async (e: React.ChangeEvent<HTMLInputElement>) => {
 // Buscar por nombre alterno (ej: pago hecho por cónyuge)
 let matchAlterno = null
 if (!matchNombre) {
+  console.log('🔍 Buscando alterno para:', nombrePDF.trim())
   const { data: alterno } = await supabase
     .from('nombres_alternos')
     .select('nombre_empleado')
     .ilike('nombre_alterno', nombrePDF.trim())
     .maybeSingle()
+  console.log('📋 Resultado alterno:', alterno)
   if (alterno) {
     matchAlterno = (empleados || []).find((emp: any) =>
       normalizarNombre(emp.nombre_empleado || '').includes(
