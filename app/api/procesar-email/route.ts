@@ -41,40 +41,35 @@ export async function POST(request: NextRequest) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-5',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1000,
         messages: [{
           role: 'user',
           content: [
             {
               type: 'text',
-              text: `Eres un auxiliar contable colombiano experto en documentos financieros.
-Esta empresa es SODEPORTC SAS NIT 901183507.
-Analiza este documento y extrae los datos.
-
-REGLAS IMPORTANTES (aplica en orden):
-- Si el documento contiene las palabras "Archivos Cargados", "Resumen de Archivos Cargados", "Pagos a Terceros" o "Tipo Archivo: Pagos a Terceros": tipo="Comprobante de Egreso", categoria="Gasto", proveedor=valor exacto del campo "Nombre Beneficiario" (NUNCA uses el nombre de la empresa SODEPORTC), valor=numero entero del campo "Valor Total Archivo" sin signos ni comas
-- Si el documento es un comprobante de pago bancario (transferencia, consignacion): tipo="Comprobante de Egreso", categoria="Gasto", proveedor=nombre del beneficiario
-- Si SODEPORTC SAS es el EMISOR de la factura: tipo="Factura de Venta", categoria="Factura de Venta", proveedor=nombre del cliente que recibe
-- Si SODEPORTC SAS es quien RECIBE la factura: tipo="Factura de Compra", categoria="Factura de Compra", proveedor=nombre de quien emite
-- Si es nomina o pago a empleado: tipo="Nomina", categoria="Nomina"
-- Si es extracto bancario con movimientos de debito y credito: tipo="Extracto Bancario", categoria="Extracto Bancario"
-- NUNCA respondas con null. Si no encuentras un dato usa "" para texto y 0 para numeros.
-- El valor debe ser el monto total como numero entero sin puntos ni comas.
-
-Responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
+              text: `Eres un auxiliar contable colombiano experto.
+La empresa es SODEPORTC SAS NIT 901183507.
+Analiza este documento y responde ÚNICAMENTE con JSON válido sin texto adicional ni backticks:
 {
-  "proveedor": "nombre de la contraparte o beneficiario",
-  "nit": "NIT o cedula sin digito verificacion",
+  "categoria": "uno de: Factura de Venta | Factura de Compra | Gasto | Nomina | Extracto Bancario",
+  "proveedor": "nombre de la contraparte o banco",
   "fecha": "fecha en formato YYYY-MM-DD",
-  "valor": numero entero del valor total,
+  "valor": numero entero sin puntos ni comas,
   "iva": numero entero del IVA o 0,
   "descripcion": "descripcion breve del documento",
-  "tipo": "tipo segun las reglas anteriores",
-  "categoria": "categoria segun las reglas anteriores",
-  "numero_factura": "numero o codigo del documento o vacio",
-  "cufe": "CUFE si existe o vacio"
-}`
+  "tipo": "igual que categoria",
+  "numero_factura": "numero del documento si aplica o null",
+  "banco": "nombre del banco si es extracto o null",
+  "periodo": "periodo del extracto ejemplo MAYO 2026 o null"
+}
+
+Reglas de clasificacion:
+- Factura de Venta: SODEPORTC es el emisor/vendedor
+- Factura de Compra: SODEPORTC recibe la factura/compra algo
+- Gasto: recibo de caja, tiquete, recibo de servicio sin factura electronica
+- Nomina: comprobante de pago de nomina, desprendible, soporte de pago a empleado
+- Extracto Bancario: estado de cuenta bancario`
             },
             {
               type: 'document',
@@ -91,84 +86,42 @@ Responde UNICAMENTE con JSON valido sin texto adicional ni backticks:
 
     const iaData = await iaRes.json()
     const texto = iaData.content?.[0]?.text || '{}'
-    console.log('Respuesta IA:', texto)
 
-    let datosExtraidos: any = {}
+    let datos: any = {}
     try {
-      datosExtraidos = JSON.parse(texto.replace(/```json|```/g, '').trim())
+      datos = JSON.parse(texto.replace(/```json|```/g, '').trim())
     } catch {
-      datosExtraidos = {}
+      datos = { categoria: 'Factura de Compra', descripcion: nombre }
     }
 
-    const sinDatos = !datosExtraidos.proveedor && (!datosExtraidos.valor || datosExtraidos.valor === 0)
-    if (sinDatos) {
-      console.log('Documento sin datos utiles, no se guarda:', nombre)
-      return NextResponse.json({ success: false, error: 'No se pudieron extraer datos del documento' })
+    // Guardar en facturas (todos los tipos excepto Nomina)
+    if (datos.categoria !== 'Nomina') {
+      await supabaseAdmin.from('facturas').insert({
+        user_id: userId,
+        proveedor: datos.proveedor || remitente || 'Sin nombre',
+        fecha: datos.fecha || fecha_correo?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+        valor: datos.valor || 0,
+        iva: datos.iva || 0,
+        descripcion: datos.descripcion || nombre,
+        tipo: datos.tipo || datos.categoria,
+        categoria: datos.categoria || 'Factura de Compra',
+        estado: 'Pendiente',
+        numero_factura: datos.numero_factura || null,
+      })
     }
 
-    // Verificar duplicado por numero_factura
-    if (datosExtraidos.numero_factura) {
-      const { data: dupNumero } = await supabaseAdmin
-        .from('facturas')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('numero_factura', datosExtraidos.numero_factura)
-        .maybeSingle()
-      if (dupNumero) {
-        console.log('Duplicado por numero_factura:', datosExtraidos.numero_factura)
-        return NextResponse.json({ success: false, error: 'Factura duplicada: ' + datosExtraidos.numero_factura })
-      }
+    // Si es Nomina, guardar en NOMINA para conciliacion
+    if (datos.categoria === 'Nomina') {
+      await supabaseAdmin.from('NOMINA').insert({
+        user_id: userId,
+        nombre_empleado: datos.proveedor || 'Sin nombre',
+        sueldo_pagado: datos.valor || 0,
+        fecha_pago: datos.fecha || new Date().toISOString().slice(0, 10),
+        tipo_documento: 'Comprobante Email',
+      })
     }
 
-    // Verificar duplicado por proveedor + fecha + valor
-    const { data: duplicado } = await supabaseAdmin
-      .from('facturas')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('proveedor', datosExtraidos.proveedor)
-      .eq('valor', datosExtraidos.valor)
-      .eq('fecha', datosExtraidos.fecha)
-      .maybeSingle()
-    if (duplicado) {
-      console.log('Duplicado por proveedor+fecha+valor')
-      return NextResponse.json({ success: false, error: 'Documento duplicado, ya existe en ContaBot' })
-    }
-
-    // Subir archivo a Supabase Storage
-    let archivo_url = null
-    if (archivo) {
-      const buffer = Buffer.from(archivo, 'base64')
-      const fileName = `${userId}/${Date.now()}.pdf`
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from('facturas')
-        .upload(fileName, buffer, { contentType: 'application/pdf' })
-      if (!uploadError) {
-        const { data: urlData } = supabaseAdmin.storage
-          .from('facturas')
-          .getPublicUrl(fileName)
-        archivo_url = urlData.publicUrl
-      }
-    }
-
-    const { error } = await supabaseAdmin.from('facturas').insert({
-      user_id: userId,
-      proveedor: datosExtraidos.proveedor || 'Sin nombre',
-      fecha: datosExtraidos.fecha || fecha_correo?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-      valor: datosExtraidos.valor || 0,
-      iva: datosExtraidos.iva || 0,
-      descripcion: datosExtraidos.descripcion || nombre,
-      tipo: datosExtraidos.tipo || 'Factura de Venta',
-      categoria: datosExtraidos.categoria || 'Factura de Venta',
-      estado: 'Pendiente',
-      numero_factura: datosExtraidos.numero_factura || null,
-      archivo_url,
-    })
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, datos: datosExtraidos })
+    return NextResponse.json({ success: true, categoria: datos.categoria, datos })
 
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
