@@ -1809,6 +1809,26 @@ const facturasFiltradas = facturas.filter(f => {
     </div>
   </div>
 )}
+      {visorNominaUrl && (
+  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
+      <div className="flex items-center justify-between px-6 py-4 border-b">
+        <h3 className="font-bold text-slate-800">Comprobante de Pago</h3>
+        <div className="flex gap-3">
+          <a href={visorNominaUrl} download target="_blank" rel="noreferrer"
+            className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-4 py-2 rounded-xl">
+            ⬇ Descargar
+          </a>
+          <button onClick={() => setVisorNominaUrl(null)}
+            className="text-slate-400 hover:text-slate-700 text-xl font-bold px-2">✕</button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-hidden rounded-b-2xl">
+        <iframe src={visorNominaUrl} className="w-full h-full border-0" title="Comprobante" />
+      </div>
+    </div>
+  </div>
+)}
     </div>
   )
 }
