@@ -160,12 +160,30 @@ const handleConciliacion = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       // 1. Buscar por nombre (coincidencia parcial)
       const matchNombre = (empleados || []).find((emp: any) => {
-        const nombreEmp = normalizarNombre(emp.nombre_empleado || '')
-        const palabrasPDF = nombrePDF.split(' ').filter((p: string) => p.length > 2)
-        return palabrasPDF.some((p: string) => nombreEmp.includes(p))
-      })
+  const nombreEmp = normalizarNombre(emp.nombre_empleado || '')
+  const palabrasPDF = nombrePDF.split(' ').filter((p: string) => p.length > 2)
+  return palabrasPDF.some((p: string) => nombreEmp.includes(p))
+})
 
-      if (matchNombre) {
+// Buscar por nombre alterno (ej: pago hecho por cónyuge)
+let matchAlterno = null
+if (!matchNombre) {
+  const { data: alterno } = await supabase
+    .from('nombres_alternos')
+    .select('nombre_empleado')
+    .ilike('nombre_alterno', normalizarNombre(nombrePDF).toUpperCase())
+    .maybeSingle()
+  if (alterno) {
+    matchAlterno = (empleados || []).find((emp: any) =>
+      normalizarNombre(emp.nombre_empleado || '').includes(
+        normalizarNombre(alterno.nombre_empleado)
+      )
+    )
+  }
+}
+const match = matchNombre || matchAlterno
+
+if (match) {
         const valorEmp = parseFloat(matchNombre.neto_pagar) || 0
         const diferencia = Math.abs(valorPDF - valorEmp)
         if (diferencia <= 2) {
