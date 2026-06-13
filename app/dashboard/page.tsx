@@ -27,6 +27,7 @@ const menuItems = [
   { id: 'clientes',      icon: '👥', label: 'Clientes' },
   { id: 'proveedores',   icon: '🏭', label: 'Proveedores' },
   { id: 'nomina', icon: '👷', label: 'Nomina' },
+  { id: 'clasificar', icon: '🗂️', label: 'Por Clasificar' },
   { id: 'reportes',      icon: '📈', label: 'Reportes' },
   { id: 'configuracion', icon: '⚙️', label: 'Configuracion' },
 ]
@@ -53,7 +54,75 @@ function diasParaVencer(fechaVencimiento: string | null) {
   const diff = Math.floor((vence.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
   return diff
 }
+function DocsporClasificar({ userId, supabase }: { userId: string, supabase: any }) {
+  const [docs, setDocs] = React.useState<any[]>([])
+  const [cargando, setCargando] = React.useState(true)
 
+  React.useEffect(() => {
+    const cargar = async () => {
+      const { data } = await supabase
+        .from('docs_por_clasificar')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+      setDocs(data || [])
+      setCargando(false)
+    }
+    cargar()
+  }, [userId])
+
+  const eliminar = async (id: number) => {
+    await supabase.from('docs_por_clasificar').delete().eq('id', id)
+    setDocs(docs.filter(d => d.id !== id))
+  }
+
+  if (cargando) return <p className="text-slate-500">Cargando...</p>
+  if (docs.length === 0) return (
+    <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
+      <p className="text-green-700 font-medium">✅ No hay documentos pendientes por clasificar</p>
+    </div>
+  )
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-slate-600">
+          <tr>
+            <th className="px-4 py-3 text-left">Fecha</th>
+            <th className="px-4 py-3 text-left">Archivo</th>
+            <th className="px-4 py-3 text-left">Remitente</th>
+            <th className="px-4 py-3 text-left">Razón</th>
+            <th className="px-4 py-3 text-left">Categoría sugerida</th>
+            <th className="px-4 py-3 text-left">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {docs.map((doc) => (
+            <tr key={doc.id} className="border-t border-slate-100 hover:bg-slate-50">
+              <td className="px-4 py-3 text-slate-500">{doc.fecha_correo || '-'}</td>
+              <td className="px-4 py-3 font-medium text-slate-700">{doc.nombre_archivo || '-'}</td>
+              <td className="px-4 py-3 text-slate-500">{doc.remitente || '-'}</td>
+              <td className="px-4 py-3 text-slate-500 text-xs">{doc.razon || '-'}</td>
+              <td className="px-4 py-3">
+                <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
+                  {doc.categoria_sugerida || 'Desconocido'}
+                </span>
+              </td>
+              <td className="px-4 py-3">
+                <button
+                  onClick={() => eliminar(doc.id)}
+                  className="text-red-500 hover:text-red-700 text-xs font-medium"
+                >
+                  Eliminar
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -1795,7 +1864,14 @@ const facturasFiltradas = facturas.filter(f => {
     </div>
   </div>
 )}
-        {['reportes', 'configuracion'].includes(seccion) && (
+       {seccion === 'clasificar' && (
+  <div>
+    <h2 className="text-2xl font-bold text-slate-800 mb-6">🗂️ Documentos por Clasificar</h2>
+    <DocsporClasificar userId={user?.id} supabase={supabase} />
+  </div>
+)}
+
+{['reportes', 'configuracion'].includes(seccion) && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
             <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
