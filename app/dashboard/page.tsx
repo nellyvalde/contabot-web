@@ -55,10 +55,10 @@ function diasParaVencer(fechaVencimiento: string | null) {
   return diff
 }
 function DocsporClasificar({ userId, supabase }: { userId: string, supabase: any }) {
-  const [docs, setDocs] = React.useState<any[]>([])
-  const [cargando, setCargando] = React.useState(true)
+  const [docs, setDocs] = useState<any[]>([])
+const [cargando, setCargando] = useState(true)
 
-  React.useEffect(() => {
+useEffect(() => {
     const cargar = async () => {
       const { data } = await supabase
         .from('docs_por_clasificar')
