@@ -6,33 +6,43 @@ const SECRET = 'sodeportc_secret_2026'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-
     if (body.secret !== SECRET) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    const { archivo, tipo, nombre, remitente, fecha_correo } = body
+    const { archivo, nombre, remitente, fecha_correo } = body
 
-    const supabaseAdmin = createClient(
+    const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    const correoEmpresa = 'asistenciasodeportc@gmail.com'
-    const { data: empresa } = await supabaseAdmin
+    // Buscar empresa
+    const { data: empresa } = await supabase
       .from('empresas')
-      .select('user_id, nombre')
-      .eq('correo', correoEmpresa)
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .select('user_id')
+      .eq('correo', 'asistenciasodeportc@gmail.com')
       .single()
 
     if (!empresa?.user_id) {
       return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
     }
-
     const userId = empresa.user_id
 
+    // Si no hay archivo adjunto, guardar en docs_por_clasificar
+    if (!archivo) {
+      await supabase.from('docs_por_clasificar').insert({
+        user_id: userId,
+        nombre_archivo: nombre || 'Sin nombre',
+        remitente: remitente || 'Desconocido',
+        fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
+        razon: 'Email sin adjunto PDF',
+        categoria_sugerida: 'Sin adjunto'
+      })
+      return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'sin adjunto' })
+    }
+
+    // Clasificar con IA
     const iaRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -52,24 +62,23 @@ export async function POST(request: NextRequest) {
 La empresa es SODEPORTC SAS NIT 901183507.
 Analiza este documento y responde ÚNICAMENTE con JSON válido sin texto adicional ni backticks:
 {
-  "categoria": "uno de: Factura de Venta | Factura de Compra | Gasto | Nomina | Extracto Bancario",
-  "proveedor": "nombre de la contraparte o banco",
-  "fecha": "fecha en formato YYYY-MM-DD",
-  "valor": numero entero sin puntos ni comas,
+  "categoria": "uno de: Factura de Venta | Factura de Compra | Gasto | Comprobante de Nomina | Extracto Bancario | Desconocido",
+  "proveedor": "nombre completo de la contraparte, banco o beneficiario. Si no se puede identificar escribe null",
+  "fecha": "fecha en formato YYYY-MM-DD o null",
+  "valor": numero entero sin puntos ni comas o 0,
   "iva": numero entero del IVA o 0,
   "descripcion": "descripcion breve del documento",
-  "tipo": "igual que categoria",
   "numero_factura": "numero del documento si aplica o null",
-  "banco": "nombre del banco si es extracto o null",
-  "periodo": "periodo del extracto ejemplo MAYO 2026 o null"
+  "confianza": "alta | media | baja"
 }
 
-Reglas de clasificacion:
-- Factura de Venta: SODEPORTC es el emisor/vendedor
-- Factura de Compra: SODEPORTC recibe la factura/compra algo
-- Gasto: recibo de caja, tiquete, recibo de servicio sin factura electronica
-- Nomina: comprobante de pago de nomina, desprendible, soporte de pago a empleado
-- Extracto Bancario: estado de cuenta bancario`
+Reglas ESTRICTAS:
+- Factura de Venta: SODEPORTC es el emisor/vendedor, tiene CUFE DIAN
+- Factura de Compra: SODEPORTC recibe la factura, tiene CUFE DIAN  
+- Gasto: recibo de caja, tiquete, recibo de servicio SIN factura electronica DIAN
+- Comprobante de Nomina: comprobante de pago bancario a empleado, transferencia de nomina, desprendible de pago, soporte de consignacion a persona natural
+- Extracto Bancario: estado de cuenta bancario mensual
+- Desconocido: no se puede determinar con claridad`
             },
             {
               type: 'document',
@@ -91,37 +100,125 @@ Reglas de clasificacion:
     try {
       datos = JSON.parse(texto.replace(/```json|```/g, '').trim())
     } catch {
-      datos = { categoria: 'Factura de Compra', descripcion: nombre }
+      datos = { categoria: 'Desconocido', confianza: 'baja' }
     }
 
-    // Guardar en facturas (todos los tipos excepto Nomina)
-    if (datos.categoria !== 'Nomina') {
-      await supabaseAdmin.from('facturas').insert({
+    // VALIDACIÓN: si no tiene proveedor ni valor, va a docs_por_clasificar
+    if (!datos.proveedor && (!datos.valor || datos.valor === 0)) {
+      await supabase.from('docs_por_clasificar').insert({
         user_id: userId,
-        proveedor: datos.proveedor || remitente || 'Sin nombre',
-        fecha: datos.fecha || fecha_correo?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-        valor: datos.valor || 0,
-        iva: datos.iva || 0,
-        descripcion: datos.descripcion || nombre,
-        tipo: datos.tipo || datos.categoria,
-        categoria: datos.categoria || 'Factura de Compra',
-        estado: 'Pendiente',
-        numero_factura: datos.numero_factura || null,
+        nombre_archivo: nombre || 'Sin nombre',
+        remitente: remitente || 'Desconocido',
+        fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
+        razon: 'No se pudo identificar proveedor ni valor',
+        categoria_sugerida: datos.categoria || 'Desconocido'
       })
+      return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'sin datos' })
     }
 
-    // Si es Nomina, guardar en NOMINA para conciliacion
-    if (datos.categoria === 'Nomina') {
-      await supabaseAdmin.from('NOMINA').insert({
+    // VALIDACIÓN: confianza baja va a docs_por_clasificar
+    if (datos.confianza === 'baja' || datos.categoria === 'Desconocido') {
+      await supabase.from('docs_por_clasificar').insert({
         user_id: userId,
-        nombre_empleado: datos.proveedor || 'Sin nombre',
-        sueldo_pagado: datos.valor || 0,
-        fecha_pago: datos.fecha || new Date().toISOString().slice(0, 10),
-        tipo_documento: 'Comprobante Email',
+        nombre_archivo: nombre || datos.proveedor || 'Sin nombre',
+        remitente: remitente || 'Desconocido',
+        fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
+        razon: `Clasificación incierta: ${datos.categoria}`,
+        categoria_sugerida: datos.categoria || 'Desconocido'
       })
+      return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'confianza baja' })
     }
 
-    return NextResponse.json({ success: true, categoria: datos.categoria, datos })
+    // RUTA NÓMINA: Comprobante de pago bancario a empleado
+    if (datos.categoria === 'Comprobante de Nomina') {
+      const valorBuscado = datos.valor || 0
+      const nombreBeneficiario = datos.proveedor?.toUpperCase() || ''
+
+      // Buscar empleado por nombre o nombre alterno
+      let empleadoMatch = null
+
+      // Buscar por nombre alterno primero
+      const { data: alterno } = await supabase
+        .from('nombres_alternos')
+        .select('nombre_empleado')
+        .ilike('nombre_alterno', nombreBeneficiario)
+        .maybeSingle()
+
+      if (alterno) {
+        const { data: empData } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('user_id', userId)
+          .ilike('nombre_empleado', `%${alterno.nombre_empleado}%`)
+          .maybeSingle()
+        empleadoMatch = empData
+      }
+
+      // Si no encontró por alterno, buscar por nombre directo
+      if (!empleadoMatch) {
+        const { data: empDirect } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('user_id', userId)
+          .ilike('nombre_empleado', `%${nombreBeneficiario}%`)
+          .maybeSingle()
+        empleadoMatch = empDirect
+      }
+
+      // Si no encontró por nombre, buscar por valor
+      if (!empleadoMatch && valorBuscado > 0) {
+        const { data: empValor } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('neto_pagar', valorBuscado)
+          .maybeSingle()
+        empleadoMatch = empValor
+      }
+
+      if (empleadoMatch) {
+        await supabase
+          .from('nomina_programada')
+          .update({
+            estado: 'Pagado',
+            archivo_url: nombre || 'email'
+          })
+          .eq('id', empleadoMatch.id)
+
+        return NextResponse.json({ 
+          success: true, 
+          ruta: 'nomina_programada', 
+          empleado: empleadoMatch.nombre_empleado 
+        })
+      } else {
+        // No encontró empleado — va a docs_por_clasificar
+        await supabase.from('docs_por_clasificar').insert({
+          user_id: userId,
+          nombre_archivo: nombre || datos.proveedor,
+          remitente: remitente || datos.proveedor,
+          fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
+          razon: `Comprobante de nómina — empleado no encontrado: ${datos.proveedor}`,
+          categoria_sugerida: 'Comprobante de Nomina'
+        })
+        return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'empleado no encontrado' })
+      }
+    }
+
+    // RUTA DOCUMENTOS: Facturas y gastos válidos
+    await supabase.from('facturas').insert({
+      user_id: userId,
+      proveedor: datos.proveedor || remitente || 'Sin nombre',
+      fecha: datos.fecha || fecha_correo || new Date().toISOString().slice(0, 10),
+      valor: datos.valor || 0,
+      iva: datos.iva || 0,
+      descripcion: datos.descripcion || nombre,
+      tipo: datos.categoria,
+      categoria: datos.categoria,
+      estado: 'Pendiente',
+      numero_factura: datos.numero_factura || null,
+    })
+
+    return NextResponse.json({ success: true, ruta: 'facturas', categoria: datos.categoria })
 
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
