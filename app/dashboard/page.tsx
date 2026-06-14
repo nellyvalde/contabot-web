@@ -134,7 +134,7 @@ function NominaRow({ n, supabase, user, setVisorNominaUrl, cargarNominaProgramad
         </td>
         <td className="py-2 font-medium text-slate-700">{n.nombre_empleado}</td>
         <td className="py-2 text-slate-500">{n.cedula}</td>
-        <td className="py-2 text-right font-semibold text-emerald-600">
+        <td className="py-2 text-right pr-4 font-semibold text-emerald-600">
           ${n.neto_pagar?.toLocaleString()}
         </td>
         <td className="py-2">
@@ -1872,7 +1872,7 @@ const facturasFiltradas = facturas.filter(f => {
            <th className="pb-2 w-8"></th>
             <th className="pb-2">Empleado</th>
             <th className="pb-2">Identificación</th>
-            <th className="pb-2 text-right">Neto a Pagar</th>
+            <th className="pb-2 text-right pr-4">Neto a Pagar</th>
             <th className="pb-2">Estado</th>
             <th className="pb-2">Soporte</th>
           </tr>
