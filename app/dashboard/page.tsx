@@ -342,7 +342,7 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       pension: parseFloat(r[19]) || 0,
       salud: parseFloat(r[20]) || 0,
       total_deducciones: parseFloat(r[21]) || 0,
-      neto_pagar: (parseFloat(r[5]) || 0) + (parseFloat(r[6]) || 0) + (parseFloat(r[10]) || 0) + (parseFloat(r[14]) || 0),
+     neto_pagar: parseFloat(r[22]) || 0,
       observaciones: r[23] || '',
       estado: 'Pendiente de Pago',
       fecha_carga: new Date().toISOString().slice(0, 10),
