@@ -335,13 +335,14 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       bonificaciones: parseFloat(r[10]) || 0,
       total_devengado: parseFloat(r[11]) || 0,
       prima: parseFloat(r[14]) || 0,
+      abono_prima: parseFloat(r[14]) || 0,
       vacaciones: parseFloat(r[16]) || 0,
       prestamo: parseFloat(r[12]) || 0,
       descuento: parseFloat(r[13]) || 0,
       pension: parseFloat(r[19]) || 0,
       salud: parseFloat(r[20]) || 0,
       total_deducciones: parseFloat(r[21]) || 0,
-      neto_pagar: parseFloat(r[22]) || 0,
+      neto_pagar: (parseFloat(r[5]) || 0) + (parseFloat(r[6]) || 0) + (parseFloat(r[10]) || 0) + (parseFloat(r[14]) || 0),
       observaciones: r[23] || '',
       estado: 'Pendiente de Pago',
       fecha_carga: new Date().toISOString().slice(0, 10),
@@ -1783,6 +1784,7 @@ const facturasFiltradas = facturas.filter(f => {
             <th className="pb-2">Sueldo Base</th>
             <th className="pb-2">Aux. Transporte</th>
             <th className="pb-2">Bonificaciones</th>
+            <th className="pb-2">Prima / Abono</th>
             <th className="pb-2">Neto a Pagar</th>
             <th className="pb-2">Estado</th>
             <th className="pb-2">Soporte</th>
@@ -1797,6 +1799,7 @@ const facturasFiltradas = facturas.filter(f => {
               <td className="py-2">${n.sueldo_base?.toLocaleString()}</td>
               <td className="py-2">${n.auxilio_transporte?.toLocaleString()}</td>
               <td className="py-2">${n.bonificaciones?.toLocaleString()}</td>
+              <td className="py-2">{n.abono_prima && n.abono_prima > 0 ? `$${n.abono_prima?.toLocaleString()}` : '-'}</td>
               <td className="py-2 text-emerald-700 font-medium">${n.neto_pagar?.toLocaleString()}</td>
               <td className="py-2">
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
