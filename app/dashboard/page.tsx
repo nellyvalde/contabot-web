@@ -123,6 +123,97 @@ useEffect(() => {
     </div>
   )
 }
+function NominaRow({ n, supabase, user, setVisorNominaUrl, cargarNominaProgramada }: any) {
+  const [expandido, setExpandido] = useState(false)
+
+  return (
+    <>
+      <tr className="border-b last:border-0 hover:bg-slate-50 cursor-pointer" onClick={() => setExpandido(!expandido)}>
+        <td className="py-2 text-slate-400 text-center">
+          {expandido ? '▼' : '▶'}
+        </td>
+        <td className="py-2 font-medium text-slate-700">{n.nombre_empleado}</td>
+        <td className="py-2 text-slate-500">{n.cedula}</td>
+        <td className="py-2 text-right font-semibold text-emerald-600">
+          ${n.neto_pagar?.toLocaleString()}
+        </td>
+        <td className="py-2">
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+            n.estado === 'Pagado' ? 'bg-green-100 text-green-700' :
+            n.estado === 'Revisar Valor' ? 'bg-orange-100 text-orange-700' :
+            'bg-yellow-100 text-yellow-700'
+          }`}>{n.estado}</span>
+        </td>
+        <td className="py-2">
+          {n.archivo_url && (
+            <button onClick={(e) => { e.stopPropagation(); setVisorNominaUrl(n.archivo_url) }}
+              className="text-blue-400 hover:text-blue-600">👁</button>
+          )}
+        </td>
+      </tr>
+      {expandido && (
+        <tr className="bg-slate-50">
+          <td colSpan={6} className="px-6 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">💰 Devengados</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Sueldo Base</span>
+                    <span className="font-medium">${n.sueldo_base?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Aux. Transporte</span>
+                    <span className="font-medium">${n.auxilio_transporte?.toLocaleString() || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Bonificaciones</span>
+                    <span className="font-medium">${n.bonificaciones?.toLocaleString() || 0}</span>
+                  </div>
+                  {n.abono_prima > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Prima / Abono</span>
+                      <span className="font-medium text-blue-600">${n.abono_prima?.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {n.saldo_anterior > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Saldo Anterior</span>
+                      <span className="font-medium text-purple-600">${n.saldo_anterior?.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-semibold border-t pt-1 mt-1">
+                    <span className="text-slate-700">Neto a Pagar</span>
+                    <span className="text-emerald-600">${n.neto_pagar?.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">📋 Información</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Área</span>
+                    <span className="font-medium">{n.area}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Cédula</span>
+                    <span className="font-medium">{n.cedula}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Estado</span>
+                    <span className={`font-medium ${n.estado === 'Pagado' ? 'text-green-600' : 'text-yellow-600'}`}>
+                      {n.estado}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -1778,45 +1869,20 @@ const facturasFiltradas = facturas.filter(f => {
       <table className="w-full text-xs">
         <thead>
           <tr className="text-left text-slate-500 border-b">
+           <th className="pb-2 w-8"></th>
             <th className="pb-2">Empleado</th>
-            <th className="pb-2">Cédula</th>
-            <th className="pb-2">Área</th>
-            <th className="pb-2">Sueldo Base</th>
-            <th className="pb-2">Aux. Transporte</th>
-            <th className="pb-2">Bonificaciones</th>
-            <th className="pb-2">Prima / Abono</th>
-            <th className="pb-2">Neto a Pagar</th>
+            <th className="pb-2">Identificación</th>
+            <th className="pb-2 text-right">Neto a Pagar</th>
             <th className="pb-2">Estado</th>
             <th className="pb-2">Soporte</th>
           </tr>
         </thead>
         <tbody>
           {nominaProgramada.map((n) => (
-            <tr key={n.id} className="border-b last:border-0 hover:bg-slate-50">
-              <td className="py-2 font-medium">{n.nombre_empleado}</td>
-              <td className="py-2 text-slate-500">{n.cedula}</td>
-              <td className="py-2 text-slate-500">{n.area}</td>
-              <td className="py-2">${n.sueldo_base?.toLocaleString()}</td>
-              <td className="py-2">${n.auxilio_transporte?.toLocaleString()}</td>
-              <td className="py-2">${n.bonificaciones?.toLocaleString()}</td>
-              <td className="py-2">{n.abono_prima && n.abono_prima > 0 ? `$${n.abono_prima?.toLocaleString()}` : '-'}</td>
-              <td className="py-2 text-emerald-700 font-medium">${n.neto_pagar?.toLocaleString()}</td>
-              <td className="py-2">
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-  n.estado === 'Pagado' ? 'bg-green-100 text-green-700' :
-  n.estado === 'Revisar Valor' ? 'bg-orange-100 text-orange-700' :
-  'bg-yellow-100 text-yellow-700'
-}`}>{n.estado}</span>
-</td>
-<td className="py-2">
-  {n.archivo_url && (
-    <button onClick={() => setVisorNominaUrl(n.archivo_url)} className="text-blue-400 hover:text-blue-600">👁</button>
-  )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+  <NominaRow key={n.id} n={n} supabase={supabase} user={user} setVisorNominaUrl={setVisorNominaUrl} cargarNominaProgramada={cargarNominaProgramada} />
+))}
+</tbody>
+</table>
     </div>
   )}
 </div>
