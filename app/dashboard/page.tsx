@@ -335,7 +335,7 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       bonificaciones: parseFloat(r[10]) || 0,
       total_devengado: parseFloat(r[11]) || 0,
       prima: parseFloat(r[14]) || 0,
-      abono_prima: parseFloat(r[14]) || 0,
+      abono_prima: parseFloat(r[15]) || 0,
       vacaciones: parseFloat(r[16]) || 0,
       prestamo: parseFloat(r[12]) || 0,
       descuento: parseFloat(r[13]) || 0,
