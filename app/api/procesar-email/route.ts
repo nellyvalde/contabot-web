@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         remitente: remitente || 'Desconocido',
         fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
         razon: 'Email sin adjunto PDF',
-        categoria_sugerida: 'Sin adjunto'
+        categoria_sugerida: 'Sin adjunto',
         archivo_data: archivo || null,
       })
       return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'sin adjunto' })
@@ -112,7 +112,7 @@ Reglas ESTRICTAS:
         remitente: remitente || 'Desconocido',
         fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
         razon: 'No se pudo identificar proveedor ni valor',
-        categoria_sugerida: datos.categoria || 'Desconocido'
+        categoria_sugerida: datos.categoria || 'Desconocido',
         archivo_data: archivo || null,
       })
       return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'sin datos' })
@@ -126,7 +126,7 @@ Reglas ESTRICTAS:
         remitente: remitente || 'Desconocido',
         fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
         razon: `Clasificación incierta: ${datos.categoria}`,
-        categoria_sugerida: datos.categoria || 'Desconocido'
+        categoria_sugerida: datos.categoria || 'Desconocido',
         archivo_data: archivo || null,
       })
       return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'confianza baja' })
@@ -201,7 +201,7 @@ Reglas ESTRICTAS:
           remitente: remitente || datos.proveedor,
           fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
           razon: `Comprobante de nómina — empleado no encontrado: ${datos.proveedor}`,
-          categoria_sugerida: 'Comprobante de Nomina'
+          categoria_sugerida: 'Comprobante de Nomina',
           archivo_data: archivo || null,
         })
         return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'empleado no encontrado' })
