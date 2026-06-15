@@ -900,6 +900,12 @@ const facturasFiltradas = facturas.filter(f => {
     const matchValorMax = !filtroValorMax || (f.valor || 0) <= parseFloat(filtroValorMax)
     return matchFiltro && matchBuscar && matchTipo && matchEstado && matchFechaInicio && matchFechaFin && matchValorMin && matchValorMax
   })
+  const ventasRep = facturasReporte.filter((f:any) => f.categoria === 'Factura de Venta')
+const comprasRep = facturasReporte.filter((f:any) => ['Factura de Compra','Gasto'].includes(f.categoria))
+const baseVentasRep = ventasRep.reduce((a:number,b:any) => a + Math.round(b.valor||0), 0)
+const ivaVentasRep = ventasRep.reduce((a:number,b:any) => a + Math.round(b.iva||0), 0)
+const baseComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.valor||0), 0)
+const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva||0), 0)
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <p className="text-white">Cargando...</p>
@@ -2214,139 +2220,86 @@ const facturasFiltradas = facturas.filter(f => {
       <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
         <p className="text-4xl mb-3">📄</p>
         <p className="font-medium">No hay documentos para {meses[reporteMes-1]} {reporteAnio}</p>
-        <p className="text-sm mt-1">Genera el reporte o verifica el período seleccionado</p>
       </div>
-    ) : (() => {
-      const ventas = facturasReporte.filter(f => f.categoria === 'Factura de Venta')
-      const compras = facturasReporte.filter(f => ['Factura de Compra','Gasto'].includes(f.categoria))
-      const baseVentas = ventas.reduce((a,b) => a + Math.round(b.valor||0), 0)
-      const ivaVentas = ventas.reduce((a,b) => a + Math.round(b.iva||0), 0)
-      const baseCompras = compras.reduce((a,b) => a + Math.round(b.valor||0), 0)
-      const ivaCompras = compras.reduce((a,b) => a + Math.round(b.iva||0), 0)
-      return (
-        <>
-          {/* Resumen */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
-              <h3 className="font-semibold text-slate-800 mb-4">💰 Ingresos (Ventas)</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Documentos</span><span>{ventas.length}</span></div>
-                <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Base Gravable</span><span className="text-emerald-600 font-medium">${baseVentas.toLocaleString()}</span></div>
-                <div className="flex justify-between py-2 border-b"><span className="text-slate-500">IVA</span><span className="text-emerald-600 font-medium">${ivaVentas.toLocaleString()}</span></div>
-                <div className="flex justify-between py-2 bg-emerald-50 rounded-xl px-3 font-bold"><span>Total</span><span className="text-emerald-600">${(baseVentas+ivaVentas).toLocaleString()}</span></div>
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
-              <h3 className="font-semibold text-slate-800 mb-4">🧾 Egresos (Compras/Gastos)</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Documentos</span><span>{compras.length}</span></div>
-                <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Base Gravable</span><span className="text-red-600 font-medium">${baseCompras.toLocaleString()}</span></div>
-                <div className="flex justify-between py-2 border-b"><span className="text-slate-500">IVA</span><span className="text-red-600 font-medium">${ivaCompras.toLocaleString()}</span></div>
-                <div className="flex justify-between py-2 bg-red-50 rounded-xl px-3 font-bold"><span>Total</span><span className="text-red-600">${(baseCompras+ivaCompras).toLocaleString()}</span></div>
-              </div>
+    ) : (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
+            <h3 className="font-semibold text-slate-800 mb-4">💰 Ingresos (Ventas)</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Documentos</span><span>{ventasRep.length}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Base Gravable</span><span className="text-emerald-600 font-medium">${baseVentasRep.toLocaleString()}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-slate-500">IVA</span><span className="text-emerald-600 font-medium">${ivaVentasRep.toLocaleString()}</span></div>
+              <div className="flex justify-between py-2 bg-emerald-50 rounded-xl px-3 font-bold"><span>Total</span><span className="text-emerald-600">${(baseVentasRep+ivaVentasRep).toLocaleString()}</span></div>
             </div>
           </div>
-
-          {/* Detalle Ventas */}
-          {ventas.length > 0 && (
-            <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
-              <h3 className="font-semibold text-slate-800 mb-3">📋 Detalle Facturas de Venta</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="pb-2">Fecha</th><th className="pb-2">Cliente</th><th className="pb-2">Base</th><th className="pb-2">IVA</th><th className="pb-2">Total</th><th className="pb-2">Estado</th>
-                  </tr></thead>
-                  <tbody>
-                    {ventas.map((f,i) => (
-                      <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
-                        <td className="py-2 text-slate-500">{f.fecha}</td>
-                        <td className="py-2 font-medium">{f.proveedor}</td>
-                        <td className="py-2 text-emerald-600">${Math.round(f.valor||0).toLocaleString()}</td>
-                        <td className="py-2 text-emerald-600">${Math.round(f.iva||0).toLocaleString()}</td>
-                        <td className="py-2 font-bold text-emerald-700">${(Math.round(f.valor||0)+Math.round(f.iva||0)).toLocaleString()}</td>
-                        <td className="py-2"><span className={`px-2 py-1 rounded-full text-xs font-medium ${f.estado==='Pagado'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-           {/* Detalle Compras */}
-          {compras.length > 0 && (
-            <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
-              <h3 className="font-semibold text-slate-800 mb-3">📋 Detalle Compras y Gastos</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-slate-500 border-b">
-                    <th className="pb-2">Fecha</th><th className="pb-2">Proveedor</th><th className="pb-2">Categoría</th><th className="pb-2">Base</th><th className="pb-2">IVA</th><th className="pb-2">Total</th><th className="pb-2">Estado</th>
-                  </tr></thead>
-                  <tbody>
-                    {compras.map((f,i) => (
-                      <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
-                        <td className="py-2 text-slate-500">{f.fecha}</td>
-                        <td className="py-2 font-medium">{f.proveedor}</td>
-                        <td className="py-2"><span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">{f.categoria}</span></td>
-                        <td className="py-2 text-red-600">${Math.round(f.valor||0).toLocaleString()}</td>
-                        <td className="py-2 text-red-600">${Math.round(f.iva||0).toLocaleString()}</td>
-                        <td className="py-2 font-bold text-red-700">${(Math.round(f.valor||0)+Math.round(f.iva||0)).toLocaleString()}</td>
-                        <td className="py-2"><span className={`px-2 py-1 rounded-full text-xs font-medium ${f.estado==='Pagado'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          <button onClick={descargarAliaddoVentasCompras} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">
-            ⬇️ Descargar Formato Aliaddo (Ventas/Compras)
-          </button>
-        </>
-      )
-    })()}
-  </>
-)}
-
-            {/* COMPRAS */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
-              <h3 className="font-semibold text-slate-800 mb-4">🧾 Compras y Gastos</h3>
-              <div className="space-y-3 text-sm mb-4">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-slate-500">Documentos totales</span>
-                  <span className="font-medium">{compras.length}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-slate-500">Base Gravable</span>
-                  <span className="font-medium text-red-600">${baseCompras.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-slate-500">IVA</span>
-                  <span className="font-medium text-red-600">${ivaCompras.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between py-2 bg-red-50 rounded-xl px-3">
-                  <span className="font-bold text-slate-700">Total Gastos</span>
-                  <span className="font-bold text-red-600 text-lg">${totalCompras.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400 pt-1">
-                  <span>Pagadas: {comprasPagadas.length}</span>
-                  <span>Pendientes: {compras.length - comprasPagadas.length}</span>
-                </div>
-              </div>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
+            <h3 className="font-semibold text-slate-800 mb-4">🧾 Egresos (Compras/Gastos)</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Documentos</span><span>{comprasRep.length}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-slate-500">Base Gravable</span><span className="text-red-600 font-medium">${baseComprasRep.toLocaleString()}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="text-slate-500">IVA</span><span className="text-red-600 font-medium">${ivaComprasRep.toLocaleString()}</span></div>
+              <div className="flex justify-between py-2 bg-red-50 rounded-xl px-3 font-bold"><span>Total</span><span className="text-red-600">${(baseComprasRep+ivaComprasRep).toLocaleString()}</span></div>
             </div>
           </div>
-  
-          <button onClick={descargarAliaddoVentasCompras}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">
-            ⬇️ Descargar Formato Aliaddo (Ventas/Compras)
-          </button>
-        </>
-      )
-    })()}
+        </div>
+
+        {ventasRep.length > 0 && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+            <h3 className="font-semibold text-slate-800 mb-3">📋 Detalle Facturas de Venta</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-slate-500 border-b">
+                  <th className="pb-2">Fecha</th><th className="pb-2">Cliente</th><th className="pb-2">Base</th><th className="pb-2">IVA</th><th className="pb-2">Total</th><th className="pb-2">Estado</th>
+                </tr></thead>
+                <tbody>
+                  {ventasRep.map((f:any,i:number) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
+                      <td className="py-2 text-slate-500">{f.fecha}</td>
+                      <td className="py-2 font-medium">{f.proveedor}</td>
+                      <td className="py-2 text-emerald-600">${Math.round(f.valor||0).toLocaleString()}</td>
+                      <td className="py-2 text-emerald-600">${Math.round(f.iva||0).toLocaleString()}</td>
+                      <td className="py-2 font-bold text-emerald-700">${(Math.round(f.valor||0)+Math.round(f.iva||0)).toLocaleString()}</td>
+                      <td className="py-2"><span className={`px-2 py-1 rounded-full text-xs font-medium ${f.estado==='Pagado'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {comprasRep.length > 0 && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+            <h3 className="font-semibold text-slate-800 mb-3">📋 Detalle Compras y Gastos</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-slate-500 border-b">
+                  <th className="pb-2">Fecha</th><th className="pb-2">Proveedor</th><th className="pb-2">Categoría</th><th className="pb-2">Base</th><th className="pb-2">IVA</th><th className="pb-2">Total</th><th className="pb-2">Estado</th>
+                </tr></thead>
+                <tbody>
+                  {comprasRep.map((f:any,i:number) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
+                      <td className="py-2 text-slate-500">{f.fecha}</td>
+                      <td className="py-2 font-medium">{f.proveedor}</td>
+                      <td className="py-2"><span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">{f.categoria}</span></td>
+                      <td className="py-2 text-red-600">${Math.round(f.valor||0).toLocaleString()}</td>
+                      <td className="py-2 text-red-600">${Math.round(f.iva||0).toLocaleString()}</td>
+                      <td className="py-2 font-bold text-red-700">${(Math.round(f.valor||0)+Math.round(f.iva||0)).toLocaleString()}</td>
+                      <td className="py-2"><span className={`px-2 py-1 rounded-full text-xs font-medium ${f.estado==='Pagado'?'bg-green-100 text-green-700':'bg-yellow-100 text-yellow-700'}`}>{f.estado}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <button onClick={descargarAliaddoVentasCompras} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">⬇️ Descargar Formato Aliaddo (Ventas/Compras)</button>
+      </>
+    )}
   </>
 )}
-
     {/* TAB: FINANZAS */}
 {reporteTab === 'finanzas' && (
   <>
