@@ -797,7 +797,6 @@ const facturasFiltradas = facturas.filter(f => {
       <p className="text-white">Cargando...</p>
     </div>
   )
-}
   return (
     <div className="flex min-h-screen bg-gray-50">
       <aside className="w-64 bg-slate-900 text-white flex flex-col fixed h-full z-10">
