@@ -2249,7 +2249,13 @@ const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva
                   {ventasRep.map((f:any,i:number) => (
                     <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
                       <td className="py-2 text-slate-500">{f.fecha}</td>
-                      <td className="py-2 font-medium">{f.proveedor}</td>
+                      <td className="py-2 font-medium">
+  {f.archivo_url ? (
+    <a href={f.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex items-center gap-1">
+      {f.proveedor} <span className="text-xs">📎</span>
+    </a>
+  ) : f.proveedor}
+</td>
                       <td className="py-2 text-emerald-600">${Math.round(f.valor||0).toLocaleString()}</td>
                       <td className="py-2 text-emerald-600">${Math.round(f.iva||0).toLocaleString()}</td>
                       <td className="py-2 font-bold text-emerald-700">${(Math.round(f.valor||0)+Math.round(f.iva||0)).toLocaleString()}</td>
@@ -2274,7 +2280,13 @@ const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva
                   {comprasRep.map((f:any,i:number) => (
                     <tr key={i} className="border-b last:border-0 hover:bg-slate-50">
                       <td className="py-2 text-slate-500">{f.fecha}</td>
-                      <td className="py-2 font-medium">{f.proveedor}</td>
+                      <td className="py-2 font-medium">
+  {f.archivo_url ? (
+    <a href={f.archivo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex items-center gap-1">
+      {f.proveedor} <span className="text-xs">📎</span>
+    </a>
+  ) : f.proveedor}
+</td>
                       <td className="py-2"><span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">{f.categoria}</span></td>
                       <td className="py-2 text-red-600">${Math.round(f.valor||0).toLocaleString()}</td>
                       <td className="py-2 text-red-600">${Math.round(f.iva||0).toLocaleString()}</td>
@@ -2287,71 +2299,111 @@ const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva
             </div>
           </div>
         )}
-
+        <div className="bg-white rounded-2xl p-5 shadow-sm mb-4 border-l-4 border-purple-500">
+  <h3 className="font-semibold text-slate-800 mb-3">🧾 Saldo IVA del Período</h3>
+  <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="text-sm text-slate-500 space-y-1">
+      <p>IVA Ventas (a cargo del cliente): <span className="font-medium text-slate-700">${ivaVentasRep.toLocaleString()}</span></p>
+      <p>IVA Compras (descontable): <span className="font-medium text-slate-700">${ivaComprasRep.toLocaleString()}</span></p>
+    </div>
+    <div className="text-right">
+      <p className="text-xs text-slate-500 mb-1">{(ivaVentasRep - ivaComprasRep) >= 0 ? '⚠️ IVA por pagar a la DIAN' : '✅ Saldo a favor'}</p>
+      <p className={`text-2xl font-bold ${(ivaVentasRep - ivaComprasRep) >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+        ${Math.abs(ivaVentasRep - ivaComprasRep).toLocaleString()}
+      </p>
+    </div>
+  </div>
+</div>
         <button onClick={descargarAliaddoVentasCompras} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">⬇️ Descargar Formato Aliaddo (Ventas/Compras)</button>
       </>
     )}
   </>
 )}
-    {/* TAB: FINANZAS */}
+   {/* TAB: FINANZAS */}
 {reporteTab === 'finanzas' && (
   <>
-    {facturasReporte.length === 0 && totalDesembolsado === null ? (
+    {(facturasReporte.length === 0 && totalDesembolsado === null) ? (
       <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
         <p className="text-4xl mb-3">📈</p>
         <p className="font-medium">Genera el reporte para ver el resumen financiero</p>
       </div>
     ) : (() => {
-      const ventasPagadas = facturasReporte.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pagado')
-      const comprasPagadas = facturasReporte.filter(f => ['Factura de Compra','Gasto'].includes(f.categoria) && f.estado === 'Pagado')
-      const totalIngresos = ventasPagadas.reduce((a,b) => a + Math.round(b.valor||0), 0)
-      const totalGastos = comprasPagadas.reduce((a,b) => a + Math.round(b.valor||0), 0)
-      const totalNomina = totalDesembolsado || 0
-      const utilidad = totalIngresos - totalGastos - totalNomina
-      const margen = totalIngresos > 0 ? ((utilidad / totalIngresos) * 100).toFixed(1) : '0'
-
+      const ingresos = ventasRep.filter((f:any) => f.estado === 'Pagado').reduce((a:number,b:any) => a + Math.round(b.valor||0), 0)
+      const egresos = comprasRep.filter((f:any) => f.estado === 'Pagado').reduce((a:number,b:any) => a + Math.round(b.valor||0), 0)
+      const nomina = totalDesembolsado || 0
+      const utilidadBruta = ingresos - egresos
+      const utilidadNeta = ingresos - egresos - nomina
+      const margen = ingresos > 0 ? ((utilidadNeta / ingresos) * 100).toFixed(1) : '0'
+      const margenBruto = ingresos > 0 ? ((utilidadBruta / ingresos) * 100).toFixed(1) : '0'
       return (
         <>
-          <div className={`rounded-2xl p-6 mb-6 text-center border-2 ${utilidad >= 0 ? 'bg-emerald-50 border-emerald-500' : 'bg-red-50 border-red-500'}`}>
-            <p className={`text-sm font-medium mb-1 ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>
-              Utilidad Neta — {meses[reporteMes-1]} {reporteAnio}
+          <div className={`rounded-2xl p-6 mb-6 text-center border-2 ${utilidadNeta >= 0 ? 'bg-emerald-50 border-emerald-500' : 'bg-red-50 border-red-500'}`}>
+            <p className={`text-sm font-medium mb-1 ${utilidadNeta>=0?'text-emerald-700':'text-red-700'}`}>
+              Resultado del Período — {meses[reporteMes-1]} {reporteAnio}
             </p>
-            <p className={`text-5xl font-bold ${utilidad>=0?'text-emerald-600':'text-red-600'}`}>
-              ${Math.abs(utilidad).toLocaleString()}
+            <p className={`text-5xl font-bold ${utilidadNeta>=0?'text-emerald-600':'text-red-600'}`}>
+              ${Math.abs(utilidadNeta).toLocaleString()}
             </p>
-            <p className="text-slate-500 text-sm mt-2">
-              {utilidad >= 0 ? `📈 Ganancia · Margen ${margen}%` : `📉 Pérdida del período`}
+            <p className="text-slate-600 text-sm mt-3 font-medium">
+              {utilidadNeta >= 0
+                ? `📈 Este mes tu utilidad real fue del ${margen}% sobre los ingresos`
+                : `📉 Este mes operaste con pérdida del ${Math.abs(Number(margen))}%`}
             </p>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
-            <h3 className="font-semibold text-slate-800 mb-4">Resumen Gerencial</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-emerald-500">
+              <p className="text-xs text-slate-500 mb-1">💰 Ingresos Cobrados</p>
+              <p className="text-xl font-bold text-emerald-600">${ingresos.toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mt-1">{ventasRep.filter((f:any)=>f.estado==='Pagado').length} facturas pagadas</p>
+            </div>
+            <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-orange-500">
+              <p className="text-xs text-slate-500 mb-1">🧾 Egresos (Facturas)</p>
+              <p className="text-xl font-bold text-orange-600">${egresos.toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mt-1">{comprasRep.filter((f:any)=>f.estado==='Pagado').length} documentos pagados</p>
+            </div>
+            <div className="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-red-500">
+              <p className="text-xs text-slate-500 mb-1">💼 Nómina Pagada</p>
+              <p className="text-xl font-bold text-red-600">${Math.round(nomina).toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mt-1">{nominaReporte.length} empleados</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <h3 className="font-semibold text-slate-800 mb-4">Desglose Gerencial</h3>
             <div className="space-y-3">
               <div className="flex justify-between items-center p-4 bg-emerald-50 rounded-xl">
                 <div>
-                  <p className="font-medium text-slate-700">💰 Ingresos Confirmados</p>
-                  <p className="text-xs text-slate-400">{ventasPagadas.length} facturas pagadas</p>
+                  <p className="font-medium text-slate-700">Total Ingresos</p>
+                  <p className="text-xs text-slate-400">Facturas de venta cobradas</p>
                 </div>
-                <span className="font-bold text-emerald-600 text-xl">+${totalIngresos.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center p-4 bg-red-50 rounded-xl">
-                <div>
-                  <p className="font-medium text-slate-700">🧾 Egresos Confirmados (Facturas)</p>
-                  <p className="text-xs text-slate-400">{comprasPagadas.length} documentos pagados</p>
-                </div>
-                <span className="font-bold text-red-600 text-xl">-${totalGastos.toLocaleString()}</span>
+                <span className="font-bold text-emerald-600 text-xl">+${ingresos.toLocaleString()}</span>
               </div>
               <div className="flex justify-between items-center p-4 bg-orange-50 rounded-xl">
                 <div>
-                  <p className="font-medium text-slate-700">💼 Egresos Nómina</p>
-                  <p className="text-xs text-slate-400">{nominaReporte.length} empleados pagados</p>
+                  <p className="font-medium text-slate-700">(-) Egresos Operativos</p>
+                  <p className="text-xs text-slate-400">Compras y gastos pagados</p>
                 </div>
-                <span className="font-bold text-orange-600 text-xl">-${Math.round(totalNomina).toLocaleString()}</span>
+                <span className="font-bold text-orange-600 text-xl">-${egresos.toLocaleString()}</span>
               </div>
-              <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${utilidad>=0?'bg-emerald-100 border-emerald-400':'bg-red-100 border-red-400'}`}>
-                <p className="font-bold text-slate-800 text-lg">UTILIDAD NETA</p>
-                <span className={`font-bold text-2xl ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>
-                  {utilidad >= 0 ? '+' : '-'}${Math.abs(utilidad).toLocaleString()}
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <p className="font-semibold text-slate-700">= Utilidad Bruta ({margenBruto}%)</p>
+                <span className={`font-bold text-lg ${utilidadBruta>=0?'text-emerald-600':'text-red-600'}`}>${utilidadBruta.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-red-50 rounded-xl">
+                <div>
+                  <p className="font-medium text-slate-700">(-) Nómina Pagada</p>
+                  <p className="text-xs text-slate-400">{nominaReporte.length} empleados · período {meses[reporteMes-1]}</p>
+                </div>
+                <span className="font-bold text-red-600 text-xl">-${Math.round(nomina).toLocaleString()}</span>
+              </div>
+              <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${utilidadNeta>=0?'bg-emerald-100 border-emerald-400':'bg-red-100 border-red-400'}`}>
+                <div>
+                  <p className="font-bold text-slate-800 text-lg">= Utilidad Neta Real ({margen}%)</p>
+                  <p className="text-xs text-slate-500">Ingresos - Gastos - Nómina</p>
+                </div>
+                <span className={`font-bold text-2xl ${utilidadNeta>=0?'text-emerald-700':'text-red-700'}`}>
+                  {utilidadNeta>=0?'+':'-'}${Math.abs(utilidadNeta).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -2361,7 +2413,6 @@ const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva
     })()}
   </>
 )}
-
     {totalDesembolsado === null && facturasReporte.length === 0 && (
       <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
         <p className="text-4xl mb-3">📊</p>
