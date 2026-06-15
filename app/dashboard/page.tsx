@@ -695,17 +695,40 @@ const cargarReportePeriodo = async () => {
   if (!user) return
   setLoadingReporte(true)
   setTotalDesembolsado(null)
+  setNominaReporte([])
+  setFacturasReporte([])
+
   const inicio = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-01`
   const fin = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-31`
 
+  // Nómina — solo Pagados del período
   const { data: dataNomina } = await supabase
-    .from('nomina_programada').select('*').eq('user_id', user.id)
-    .gte('created_at', inicio).lte('created_at', fin + 'T23:59:59')
+    .from('nomina_programada')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('estado', 'Pagado')
+    .gte('created_at', inicio)
+    .lte('created_at', fin + 'T23:59:59')
+
   if (dataNomina) {
     setNominaReporte(dataNomina)
-    const pagados = dataNomina.filter((n: any) => n.estado === 'Pagado')
-    setTotalDesembolsado(pagados.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0))
+    setTotalDesembolsado(
+      dataNomina.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0)
+    )
   }
+
+  // Facturas del período
+  const { data: dataFact } = await supabase
+    .from('facturas')
+    .select('*')
+    .eq('user_id', user.id)
+    .gte('fecha', inicio)
+    .lte('fecha', fin)
+
+  if (dataFact) setFacturasReporte(dataFact)
+
+  setLoadingReporte(false)
+}
 
   const { data: dataFact } = await supabase
     .from('facturas').select('*').eq('user_id', user.id)
@@ -2190,105 +2213,194 @@ const facturasFiltradas = facturas.filter(f => {
         </div>
       </>
     )}
+{/* TAB: VENTAS/COMPRAS */}
+{reporteTab === 'ventas' && (
+  <>
+    {facturasReporte.length === 0 ? (
+      <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+        <p className="text-4xl mb-3">📄</p>
+        <p className="font-medium">Genera el reporte para ver los datos</p>
+      </div>
+    ) : (() => {
+      const ventas = facturasReporte.filter(f => f.categoria === 'Factura de Venta')
+      const compras = facturasReporte.filter(f => ['Factura de Compra','Gasto'].includes(f.categoria))
+      const ventasPagadas = ventas.filter(f => f.estado === 'Pagado')
+      const comprasPagadas = compras.filter(f => f.estado === 'Pagado')
 
-    {/* TAB: VENTAS/COMPRAS */}
-    {reporteTab === 'ventas' && facturasReporte.length > 0 && (
-      <>
-        {(() => {
-          const ventas = facturasReporte.filter(f => f.categoria === 'Factura de Venta')
-          const compras = facturasReporte.filter(f => ['Factura de Compra','Gasto'].includes(f.categoria))
-          const totalVentas = ventas.reduce((a,b) => a + Math.round(b.valor||0), 0)
-          const totalCompras = compras.reduce((a,b) => a + Math.round(b.valor||0), 0)
-          return (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-5 text-center">
-                  <p className="text-emerald-700 text-sm font-medium">Total Ingresos</p>
-                  <p className="text-3xl font-bold text-emerald-600 mt-1">${totalVentas.toLocaleString()}</p>
-                  <p className="text-slate-500 text-xs mt-1">{ventas.length} facturas de venta</p>
+      const baseVentas = ventas.reduce((a,b) => a + Math.round(b.valor||0), 0)
+      const ivaVentas = ventas.reduce((a,b) => a + Math.round(b.iva||0), 0)
+      const totalVentas = baseVentas + ivaVentas
+
+      const baseCompras = compras.reduce((a,b) => a + Math.round(b.valor||0), 0)
+      const ivaCompras = compras.reduce((a,b) => a + Math.round(b.iva||0), 0)
+      const totalCompras = baseCompras + ivaCompras
+
+      return (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* VENTAS */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
+              <h3 className="font-semibold text-slate-800 mb-4">💰 Facturas de Venta</h3>
+              <div className="space-y-3 text-sm mb-4">
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-slate-500">Documentos totales</span>
+                  <span className="font-medium">{ventas.length}</span>
                 </div>
-                <div className="bg-red-50 border-2 border-red-400 rounded-2xl p-5 text-center">
-                  <p className="text-red-700 text-sm font-medium">Total Gastos</p>
-                  <p className="text-3xl font-bold text-red-600 mt-1">${totalCompras.toLocaleString()}</p>
-                  <p className="text-slate-500 text-xs mt-1">{compras.length} documentos de compra/gasto</p>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-slate-500">Base Gravable</span>
+                  <span className="font-medium text-emerald-600">${baseVentas.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-slate-500">IVA</span>
+                  <span className="font-medium text-emerald-600">${ivaVentas.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between py-2 bg-emerald-50 rounded-xl px-3">
+                  <span className="font-bold text-slate-700">Total Ingresos</span>
+                  <span className="font-bold text-emerald-600 text-lg">${totalVentas.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400 pt-1">
+                  <span>Pagadas: {ventasPagadas.length}</span>
+                  <span>Pendientes: {ventas.length - ventasPagadas.length}</span>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-2xl p-6 shadow-sm">
-                  <h3 className="font-semibold text-slate-800 mb-3">💰 Facturas de Venta</h3>
-                  <div className="space-y-2 text-sm max-h-64 overflow-y-auto">
-                    {ventas.slice(0,10).map((f,i) => (
-                      <div key={i} className="flex justify-between border-b pb-1">
-                        <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
-                        <span className="font-medium text-emerald-600 ml-2">${Math.round(f.valor||0).toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {ventas.length > 10 && <p className="text-slate-400 text-xs text-center">+{ventas.length-10} más...</p>}
+            </div>
+
+            {/* COMPRAS */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
+              <h3 className="font-semibold text-slate-800 mb-4">🧾 Compras y Gastos</h3>
+              <div className="space-y-3 text-sm mb-4">
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-slate-500">Documentos totales</span>
+                  <span className="font-medium">{compras.length}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-slate-500">Base Gravable</span>
+                  <span className="font-medium text-red-600">${baseCompras.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-slate-500">IVA</span>
+                  <span className="font-medium text-red-600">${ivaCompras.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between py-2 bg-red-50 rounded-xl px-3">
+                  <span className="font-bold text-slate-700">Total Gastos</span>
+                  <span className="font-bold text-red-600 text-lg">${totalCompras.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400 pt-1">
+                  <span>Pagadas: {comprasPagadas.length}</span>
+                  <span>Pendientes: {compras.length - comprasPagadas.length}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Detalle documentos */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+            <div className="bg-white rounded-2xl p-5 shadow-sm">
+              <h4 className="font-medium text-slate-700 mb-3 text-sm">Detalle Ventas</h4>
+              <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
+                {ventas.map((f,i) => (
+                  <div key={i} className="flex justify-between py-1 border-b last:border-0">
+                    <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
+                    <span className={`ml-2 font-medium ${f.estado==='Pagado'?'text-emerald-600':'text-yellow-600'}`}>
+                      ${Math.round(f.valor||0).toLocaleString()}
+                    </span>
                   </div>
-                </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm">
-                  <h3 className="font-semibold text-slate-800 mb-3">🧾 Compras y Gastos</h3>
-                  <div className="space-y-2 text-sm max-h-64 overflow-y-auto">
-                    {compras.slice(0,10).map((f,i) => (
-                      <div key={i} className="flex justify-between border-b pb-1">
-                        <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
-                        <span className="font-medium text-red-600 ml-2">${Math.round(f.valor||0).toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {compras.length > 10 && <p className="text-slate-400 text-xs text-center">+{compras.length-10} más...</p>}
+                ))}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-5 shadow-sm">
+              <h4 className="font-medium text-slate-700 mb-3 text-sm">Detalle Compras/Gastos</h4>
+              <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
+                {compras.map((f,i) => (
+                  <div key={i} className="flex justify-between py-1 border-b last:border-0">
+                    <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
+                    <span className={`ml-2 font-medium ${f.estado==='Pagado'?'text-red-600':'text-yellow-600'}`}>
+                      ${Math.round(f.valor||0).toLocaleString()}
+                    </span>
                   </div>
-                </div>
+                ))}
               </div>
-              <div className="mt-4">
-                <button onClick={descargarAliaddoVentasCompras} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">⬇️ Descargar Formato Aliaddo (Ventas/Compras)</button>
-              </div>
-            </>
-          )
-        })()}
-      </>
-    )}
+            </div>
+          </div>
+
+          <button onClick={descargarAliaddoVentasCompras}
+            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">
+            ⬇️ Descargar Formato Aliaddo (Ventas/Compras)
+          </button>
+        </>
+      )
+    })()}
+  </>
+)}
 
     {/* TAB: FINANZAS */}
-    {reporteTab === 'finanzas' && (facturasReporte.length > 0 || totalDesembolsado !== null) && (
-      <>
-        {(() => {
-          const totalVentas = facturasReporte.filter(f=>f.categoria==='Factura de Venta').reduce((a,b)=>a+Math.round(b.valor||0),0)
-          const totalGastos = facturasReporte.filter(f=>['Factura de Compra','Gasto'].includes(f.categoria)).reduce((a,b)=>a+Math.round(b.valor||0),0)
-          const totalNomina = totalDesembolsado || 0
-          const utilidad = totalVentas - totalGastos - totalNomina
-          return (
-            <>
-              <div className={`rounded-2xl p-6 mb-6 text-center border-2 ${utilidad >= 0 ? 'bg-emerald-50 border-emerald-500' : 'bg-red-50 border-red-500'}`}>
-                <p className={`text-sm font-medium mb-1 ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>Utilidad Neta — {meses[reporteMes-1]} {reporteAnio}</p>
-                <p className={`text-5xl font-bold ${utilidad>=0?'text-emerald-600':'text-red-600'}`}>${Math.abs(utilidad).toLocaleString()}</p>
-                <p className="text-slate-500 text-xs mt-2">{utilidad >= 0 ? '📈 Ganancia del período' : '📉 Pérdida del período'}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm">
-                <h3 className="font-semibold text-slate-800 mb-4">Desglose del Período</h3>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-xl">
-                    <span className="text-slate-700 font-medium">💰 Total Ingresos (Ventas)</span>
-                    <span className="font-bold text-emerald-600 text-lg">+${totalVentas.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-red-50 rounded-xl">
-                    <span className="text-slate-700 font-medium">🧾 Total Compras y Gastos</span>
-                    <span className="font-bold text-red-600 text-lg">-${totalGastos.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl">
-                    <span className="text-slate-700 font-medium">💼 Total Nómina Pagada</span>
-                    <span className="font-bold text-orange-600 text-lg">-${Math.round(totalNomina).toLocaleString()}</span>
-                  </div>
-                  <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${utilidad>=0?'bg-emerald-100 border-emerald-400':'bg-red-100 border-red-400'}`}>
-                    <span className="text-slate-800 font-bold text-lg">UTILIDAD NETA</span>
-                    <span className={`font-bold text-xl ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>${utilidad.toLocaleString()}</span>
-                  </div>
+{reporteTab === 'finanzas' && (
+  <>
+    {facturasReporte.length === 0 && totalDesembolsado === null ? (
+      <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+        <p className="text-4xl mb-3">📈</p>
+        <p className="font-medium">Genera el reporte para ver el resumen financiero</p>
+      </div>
+    ) : (() => {
+      const ventasPagadas = facturasReporte.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pagado')
+      const comprasPagadas = facturasReporte.filter(f => ['Factura de Compra','Gasto'].includes(f.categoria) && f.estado === 'Pagado')
+      const totalIngresos = ventasPagadas.reduce((a,b) => a + Math.round(b.valor||0), 0)
+      const totalGastos = comprasPagadas.reduce((a,b) => a + Math.round(b.valor||0), 0)
+      const totalNomina = totalDesembolsado || 0
+      const utilidad = totalIngresos - totalGastos - totalNomina
+      const margen = totalIngresos > 0 ? ((utilidad / totalIngresos) * 100).toFixed(1) : '0'
+
+      return (
+        <>
+          <div className={`rounded-2xl p-6 mb-6 text-center border-2 ${utilidad >= 0 ? 'bg-emerald-50 border-emerald-500' : 'bg-red-50 border-red-500'}`}>
+            <p className={`text-sm font-medium mb-1 ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>
+              Utilidad Neta — {meses[reporteMes-1]} {reporteAnio}
+            </p>
+            <p className={`text-5xl font-bold ${utilidad>=0?'text-emerald-600':'text-red-600'}`}>
+              ${Math.abs(utilidad).toLocaleString()}
+            </p>
+            <p className="text-slate-500 text-sm mt-2">
+              {utilidad >= 0 ? `📈 Ganancia · Margen ${margen}%` : `📉 Pérdida del período`}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+            <h3 className="font-semibold text-slate-800 mb-4">Resumen Gerencial</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center p-4 bg-emerald-50 rounded-xl">
+                <div>
+                  <p className="font-medium text-slate-700">💰 Ingresos Confirmados</p>
+                  <p className="text-xs text-slate-400">{ventasPagadas.length} facturas pagadas</p>
                 </div>
+                <span className="font-bold text-emerald-600 text-xl">+${totalIngresos.toLocaleString()}</span>
               </div>
-            </>
-          )
-        })()}
-      </>
-    )}
+              <div className="flex justify-between items-center p-4 bg-red-50 rounded-xl">
+                <div>
+                  <p className="font-medium text-slate-700">🧾 Egresos Confirmados (Facturas)</p>
+                  <p className="text-xs text-slate-400">{comprasPagadas.length} documentos pagados</p>
+                </div>
+                <span className="font-bold text-red-600 text-xl">-${totalGastos.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-orange-50 rounded-xl">
+                <div>
+                  <p className="font-medium text-slate-700">💼 Egresos Nómina</p>
+                  <p className="text-xs text-slate-400">{nominaReporte.length} empleados pagados</p>
+                </div>
+                <span className="font-bold text-orange-600 text-xl">-${Math.round(totalNomina).toLocaleString()}</span>
+              </div>
+              <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${utilidad>=0?'bg-emerald-100 border-emerald-400':'bg-red-100 border-red-400'}`}>
+                <p className="font-bold text-slate-800 text-lg">UTILIDAD NETA</p>
+                <span className={`font-bold text-2xl ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>
+                  {utilidad >= 0 ? '+' : '-'}${Math.abs(utilidad).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        </>
+      )
+    })()}
+  </>
+)}
 
     {totalDesembolsado === null && facturasReporte.length === 0 && (
       <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
