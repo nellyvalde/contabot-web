@@ -57,16 +57,23 @@ function diasParaVencer(fechaVencimiento: string | null) {
 }
 function DocsporClasificar({ userId, supabase }: { userId: string, supabase: any }) {
   const [docs, setDocs] = useState<any[]>([])
-const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(true)
+  const [soloConPDF, setSoloConPDF] = useState(false)
+  const [pdfVisor, setPdfVisor] = useState<string | null>(null)
+  const [vincularModal, setVincularModal] = useState<any>(null)
+  const [empleados, setEmpleados] = useState<any[]>([])
+  const [empleadoSel, setEmpleadoSel] = useState('')
 
-useEffect(() => {
+  useEffect(() => {
     const cargar = async () => {
       const { data } = await supabase
-        .from('docs_por_clasificar')
-        .select('*')
-        .eq('user_id', userId)
+        .from('docs_por_clasificar').select('*').eq('user_id', userId)
         .order('created_at', { ascending: false })
       setDocs(data || [])
+      const { data: emp } = await supabase
+        .from('nomina_programada').select('id, nombre_empleado, cedula')
+        .eq('user_id', userId).order('nombre_empleado')
+      setEmpleados(emp || [])
       setCargando(false)
     }
     cargar()
@@ -77,6 +84,18 @@ useEffect(() => {
     setDocs(docs.filter(d => d.id !== id))
   }
 
+  const vincularEmpleado = async () => {
+    if (!vincularModal || !empleadoSel) return
+    const emp = empleados.find((e: any) => e.id === parseInt(empleadoSel))
+    if (!emp) return
+    await supabase.from('nomina_programada').update({ archivo_url: vincularModal.archivo_url }).eq('id', emp.id)
+    await eliminar(vincularModal.id)
+    setVincularModal(null)
+    setEmpleadoSel('')
+  }
+
+  const docsFiltrados = soloConPDF ? docs.filter((d: any) => d.archivo_url) : docs
+
   if (cargando) return <p className="text-slate-500">Cargando...</p>
   if (docs.length === 0) return (
     <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
@@ -85,42 +104,115 @@ useEffect(() => {
   )
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-slate-600">
-          <tr>
-            <th className="px-4 py-3 text-left">Fecha</th>
-            <th className="px-4 py-3 text-left">Archivo</th>
-            <th className="px-4 py-3 text-left">Remitente</th>
-            <th className="px-4 py-3 text-left">Razón</th>
-            <th className="px-4 py-3 text-left">Categoría sugerida</th>
-            <th className="px-4 py-3 text-left">Acción</th>
-          </tr>
-        </thead>
-        <tbody>
-          {docs.map((doc) => (
-            <tr key={doc.id} className="border-t border-slate-100 hover:bg-slate-50">
-              <td className="px-4 py-3 text-slate-500">{doc.fecha_correo || '-'}</td>
-              <td className="px-4 py-3 font-medium text-slate-700">{doc.nombre_archivo || '-'}</td>
-              <td className="px-4 py-3 text-slate-500">{doc.remitente || '-'}</td>
-              <td className="px-4 py-3 text-slate-500 text-xs">{doc.razon || '-'}</td>
-              <td className="px-4 py-3">
-                <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
-                  {doc.categoria_sugerida || 'Desconocido'}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                <button
-                  onClick={() => eliminar(doc.id)}
-                  className="text-red-500 hover:text-red-700 text-xs font-medium"
-                >
-                  Eliminar
-                </button>
-              </td>
+    <div>
+      {pdfVisor && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl w-full max-w-4xl h-5/6 flex flex-col p-4 mx-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-semibold text-slate-800">Vista previa del documento</h3>
+              <button onClick={() => setPdfVisor(null)} className="text-slate-500 hover:text-slate-800 text-2xl font-bold">✕</button>
+            </div>
+            <iframe src={pdfVisor} className="flex-1 rounded-xl border" title="PDF Viewer" />
+          </div>
+        </div>
+      )}
+
+      {vincularModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4">
+            <h3 className="font-bold text-slate-800 mb-1">💼 Vincular a Empleado</h3>
+            <p className="text-xs text-slate-500 mb-4">Archivo: <span className="font-medium text-slate-700">{vincularModal.nombre_archivo}</span></p>
+            <select value={empleadoSel} onChange={(e) => setEmpleadoSel(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-200 rounded-xl text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+              <option value="">Selecciona un empleado...</option>
+              {empleados.map((e: any) => (
+                <option key={e.id} value={e.id}>{e.nombre_empleado} — Cédula: {e.cedula}</option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button onClick={() => { setVincularModal(null); setEmpleadoSel('') }}
+                className="flex-1 border border-slate-200 text-slate-500 py-2 rounded-xl text-sm hover:bg-slate-50">Cancelar</button>
+              <button onClick={vincularEmpleado} disabled={!empleadoSel}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white py-2 rounded-xl text-sm font-medium">
+                Vincular PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-slate-500">{docsFiltrados.length} de {docs.length} documentos</p>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <span className="text-sm text-slate-600">Ocultar correos sin PDF</span>
+          <div onClick={() => setSoloConPDF(!soloConPDF)}
+            className={`w-10 h-6 rounded-full transition-colors cursor-pointer ${soloConPDF ? 'bg-emerald-500' : 'bg-slate-300'} relative`}>
+            <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow transition-all ${soloConPDF ? 'left-5' : 'left-1'}`} />
+          </div>
+        </label>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="px-3 py-3 text-left">Ver</th>
+              <th className="px-3 py-3 text-left">Fecha</th>
+              <th className="px-3 py-3 text-left">Archivo</th>
+              <th className="px-3 py-3 text-left">Remitente / Asunto</th>
+              <th className="px-3 py-3 text-left">Razón</th>
+              <th className="px-3 py-3 text-left">Categoría</th>
+              <th className="px-3 py-3 text-left">Acción</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {docsFiltrados.map((doc: any) => (
+              <tr key={doc.id} className="border-t border-slate-100 hover:bg-slate-50">
+                <td className="px-3 py-3">
+                  {doc.archivo_url ? (
+                    <button onClick={() => setPdfVisor(doc.archivo_url)}
+                      className="text-blue-500 hover:text-blue-700 text-lg" title="Ver PDF">👁</button>
+                  ) : <span className="text-slate-300 text-lg">—</span>}
+                </td>
+                <td className="px-3 py-3 text-slate-500 text-xs">{doc.fecha_correo || '—'}</td>
+                <td className="px-3 py-3 font-medium text-slate-700 text-xs max-w-xs truncate">{doc.nombre_archivo || 'Sin nombre'}</td>
+                <td className="px-3 py-3 max-w-xs">
+                  <p className="text-slate-700 text-xs font-medium truncate">{doc.remitente || '—'}</p>
+                  {doc.asunto && <p className="text-slate-400 text-xs mt-0.5 italic truncate">"{doc.asunto}"</p>}
+                </td>
+                <td className="px-3 py-3 text-xs max-w-xs">
+                  <span className={doc.razon?.toLowerCase().includes('diferencia') || doc.razon?.toLowerCase().includes('no encontrado')
+                    ? 'text-orange-600 font-medium' : 'text-slate-500'}>
+                    {doc.razon || '—'}
+                  </span>
+                </td>
+                <td className="px-3 py-3">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    doc.categoria_sugerida === 'Comprobante de Nomina' ? 'bg-blue-100 text-blue-700' :
+                    doc.categoria_sugerida === 'Sin adjunto' ? 'bg-gray-100 text-gray-500' :
+                    'bg-yellow-100 text-yellow-700'}`}>
+                    {doc.categoria_sugerida || 'Desconocido'}
+                  </span>
+                </td>
+                <td className="px-3 py-3">
+                  <div className="flex gap-1 flex-wrap">
+                    {doc.categoria_sugerida === 'Comprobante de Nomina' && doc.archivo_url && (
+                      <button onClick={() => setVincularModal(doc)}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-2 py-1 rounded-lg">
+                        💼 Vincular
+                      </button>
+                    )}
+                    <button onClick={() => eliminar(doc.id)}
+                      className="text-red-500 hover:text-red-700 text-xs font-medium px-1">
+                      Eliminar
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
