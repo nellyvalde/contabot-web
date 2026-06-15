@@ -181,13 +181,14 @@ const generarDesprendible = () => {
         </td>
         <td className="py-2">
           {n.archivo_url && (
-            <button onClick={(e) => { e.stopPropagation(); setVisorNominaUrl(n.archivo_url) }}
-              className="text-blue-400 hover:text-blue-600">👁</button>
-      <button
-  onClick={(e) => { e.stopPropagation(); generarDesprendible(n) }}
-  className="text-emerald-500 hover:text-emerald-700 text-xs ml-2"
-  title="Generar Desprendible"
->📄</button>
+  <>
+    <button onClick={(e) => { e.stopPropagation(); setVisorNominaUrl(n.archivo_url) }}
+      className="text-blue-400 hover:text-blue-600">👁</button>
+    <button onClick={(e) => { e.stopPropagation(); generarDesprendible() }}
+      className="text-emerald-500 hover:text-emerald-700 text-xs ml-2"
+      title="Generar Desprendible">📄</button>
+  </>
+)}
         </td>
       </tr>
      {expandido && (
