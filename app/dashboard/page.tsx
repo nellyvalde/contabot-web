@@ -158,7 +158,7 @@ const generarDesprendible = () => {
         <td className="py-2 font-medium text-slate-700">{n.nombre_empleado}</td>
         <td className="py-2 text-slate-500">{n.cedula}</td>
         <td className="py-2 text-right pr-4 font-semibold text-emerald-600">
-          ${n.Math.round(n.neto_pagar || 0).toLocaleString('es-CO')}
+          ${n.Math.round(n.neto_pagar || 0).toLocaleString()}
         </td>
         <td className="py-2">
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -260,7 +260,7 @@ const generarDesprendible = () => {
           <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
             <div className="flex justify-between items-center">
               <span className="font-bold text-slate-700 uppercase tracking-wide text-xs">Neto a Pagar</span>
-              <span className="font-bold text-emerald-600 text-base">${n.Math.round(n.neto_pagar || 0).toLocaleString('es-CO')}</span>
+              <span className="font-bold text-emerald-600 text-base">${n.Math.round(n.neto_pagar || 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center mt-1">
               <span className="text-slate-400 text-xs">Área</span>
