@@ -724,27 +724,25 @@ const cargarReportePeriodo = async () => {
 
   setLoadingReporte(false)
 }
-
 const descargarAliaddoVentasCompras = () => {
-  const docs = facturasReporte.filter(f => ['Factura de Venta','Factura de Compra','Gasto'].includes(f.categoria))
-  const fmt = (v: number) => Math.round(v || 0)
-  const rows: any[] = [['Fecha','TipoDocumento','Numero','NIT','Nombre','Cuenta','Concepto','Debito','Credito']]
-  docs.forEach((f, i) => {
-    const num = f.numero_factura || `DOC${String(i+1).padStart(4,'0')}`
+  const docs = facturasReporte.filter((f:any) => ['Factura de Venta','Factura de Compra','Gasto'].includes(f.categoria))
+  const rows: any[] = [['Fecha','NIT Tercero','Nombre Tercero','Cuenta PUC','Concepto','Base','IVA','Total','Tipo']]
+  docs.forEach((f:any) => {
+    const base = Math.round(f.valor||0)
+    const iva = Math.round(f.iva||0)
     if (f.categoria === 'Factura de Venta') {
-      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'1305',f.descripcion||'Ingreso',fmt(f.valor),0])
-      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'4135',f.descripcion||'Ingreso',0,fmt(f.valor)])
-      if (fmt(f.iva)>0) rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'2408','IVA',0,fmt(f.iva)])
+      rows.push([f.fecha, f.nit||'-', f.proveedor, '4135', f.descripcion||'Ingreso por Ventas', base, 0, base, 'Ingreso'])
+      if (iva > 0) rows.push([f.fecha, f.nit||'-', f.proveedor, '2408', 'IVA Ventas', 0, iva, iva, 'IVA'])
     } else {
-      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'5105',f.descripcion||f.categoria,fmt(f.valor),0])
-      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'2205',f.descripcion||f.categoria,0,fmt(f.valor)])
+      rows.push([f.fecha, f.nit||'-', f.proveedor, '5105', f.descripcion||f.categoria, base, 0, base, 'Egreso'])
+      if (iva > 0) rows.push([f.fecha, f.nit||'-', f.proveedor, '2367', 'IVA Descontable', 0, iva, iva, 'IVA'])
     }
   })
-  const csv = rows.map(r => r.map((c: any)=>`"${c}"`).join(',')).join('\n')
-  const blob = new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'})
+  const csv = rows.map((r:any) => r.map((c:any) => `"${c}"`).join(',')).join('\n')
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'})
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `Aliaddo_VentasCompras_${meses[reporteMes-1]}_${reporteAnio}.csv`
+  a.download = `Aliaddo_${meses[reporteMes-1]}_${reporteAnio}.csv`
   a.click()
 }
 
