@@ -2337,35 +2337,7 @@ const facturasFiltradas = facturas.filter(f => {
             </div>
           </div>
 
-          {/* Detalle documentos */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h4 className="font-medium text-slate-700 mb-3 text-sm">Detalle Ventas</h4>
-              <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
-                {ventas.map((f,i) => (
-                  <div key={i} className="flex justify-between py-1 border-b last:border-0">
-                    <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
-                    <span className={`ml-2 font-medium ${f.estado==='Pagado'?'text-emerald-600':'text-yellow-600'}`}>
-                      ${Math.round(f.valor||0).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h4 className="font-medium text-slate-700 mb-3 text-sm">Detalle Compras/Gastos</h4>
-              <div className="space-y-1 max-h-48 overflow-y-auto text-xs">
-                {compras.map((f,i) => (
-                  <div key={i} className="flex justify-between py-1 border-b last:border-0">
-                    <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
-                    <span className={`ml-2 font-medium ${f.estado==='Pagado'?'text-red-600':'text-yellow-600'}`}>
-                      ${Math.round(f.valor||0).toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          
 
           <button onClick={descargarAliaddoVentasCompras}
             className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">
