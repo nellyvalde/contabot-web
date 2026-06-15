@@ -693,7 +693,28 @@ if (duplicado) {
     setEditandoCliente(false)
     cargarClientesDB(user.id)
   }
-
+const generarDesprendible = (n: any) => {
+    const html = `<html><head><title>Desprendible - ${n.nombre_empleado}</title>
+    <style>body{font-family:Arial,sans-serif;padding:40px;color:#333}h1{color:#059669;font-size:18px}h2{font-size:14px;color:#666;margin-top:20px;border-bottom:1px solid #eee;padding-bottom:6px}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}.total{font-weight:bold;border-top:2px solid #333;margin-top:8px;padding-top:8px;font-size:15px}.neto{color:#059669;font-size:18px;font-weight:bold}.firma{margin-top:60px;border-top:1px solid #333;width:200px;text-align:center;font-size:12px;color:#666}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:2px solid #059669;padding-bottom:10px}</style></head><body>
+    <div class="header"><div><h1>SODEPORTC SAS</h1><p style="font-size:12px;color:#666;margin:0">NIT 901.183.507-5</p></div><div style="text-align:right;font-size:12px;color:#666"><p><b>Desprendible de Pago</b></p><p>${new Date().toLocaleDateString('es-CO',{month:'long',year:'numeric'})}</p></div></div>
+    <p><b>Empleado:</b> ${n.nombre_empleado}</p>
+    <p><b>Cédula:</b> ${n.cedula} &nbsp;&nbsp; <b>Área:</b> ${n.area}</p>
+    <h2>💰 Devengados</h2>
+    ${n.sueldo_base>0?'<div class="row"><span>Sueldo Básico</span><span>$'+n.sueldo_base?.toLocaleString()+'</span></div>':''}
+    ${n.auxilio_transporte>0?'<div class="row"><span>Aux. Transporte</span><span>$'+n.auxilio_transporte?.toLocaleString()+'</span></div>':''}
+    ${n.bonificaciones>0?'<div class="row"><span>Bonificaciones</span><span>$'+n.bonificaciones?.toLocaleString()+'</span></div>':''}
+    ${n.abono_prima>0?'<div class="row"><span>Abono Prima</span><span>$'+n.abono_prima?.toLocaleString()+'</span></div>':''}
+    ${n.saldo_anterior>0?'<div class="row"><span>Saldo Mes Anterior</span><span>$'+n.saldo_anterior?.toLocaleString()+'</span></div>':''}
+    ${n.pension>0||n.salud>0?'<h2>➖ Deducciones</h2>':''}
+    ${n.pension>0?'<div class="row"><span>Pensión (4%)</span><span>-$'+n.pension?.toLocaleString()+'</span></div>':''}
+    ${n.salud>0?'<div class="row"><span>Salud (4%)</span><span>-$'+n.salud?.toLocaleString()+'</span></div>':''}
+    <div class="row total"><span>NETO A PAGAR</span><span class="neto">$${n.neto_pagar?.toLocaleString()}</span></div>
+    <div class="firma"><p style="margin-top:8px">Firma del Empleado</p></div>
+    <script>window.print()</script></body></html>`
+    const win = window.open('', '_blank')
+    win?.document.write(html)
+    win?.document.close()
+  }
   const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
   const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorCobrar = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
