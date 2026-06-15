@@ -2336,9 +2336,7 @@ const facturasFiltradas = facturas.filter(f => {
               </div>
             </div>
           </div>
-
-          
-
+  
           <button onClick={descargarAliaddoVentasCompras}
             className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">
             ⬇️ Descargar Formato Aliaddo (Ventas/Compras)
