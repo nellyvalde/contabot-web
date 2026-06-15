@@ -2273,7 +2273,7 @@ const facturasFiltradas = facturas.filter(f => {
             </div>
           )}
 
-          {/* Detalle Compras */}
+           {/* Detalle Compras */}
           {compras.length > 0 && (
             <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
               <h3 className="font-semibold text-slate-800 mb-3">📋 Detalle Compras y Gastos</h3>
