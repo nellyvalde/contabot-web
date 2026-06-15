@@ -284,6 +284,11 @@ export default function Dashboard() {
   const [datosFact, setDatosFact] = useState<any>(null)
   const [facturas, setFacturas] = useState<any[]>([])
   const [seccion, setSeccion] = useState('dashboard')
+  const [reporteMes, setReporteMes] = useState(new Date().getMonth() + 1)
+  const [reporteAnio, setReporteAnio] = useState(new Date().getFullYear())
+  const [nominaReporte, setNominaReporte] = useState<any[]>([])
+  const [loadingReporte, setLoadingReporte] = useState(false)
+  const [totalDesembolsado, setTotalDesembolsado] = useState<number | null>(null)
   const [filtroCobrarCliente, setFiltroCobrarCliente] = useState('')
   const [filtroCobrarEstado, setFiltroCobrarEstado] = useState('')
   const [filtroCobrarFecha, setFiltroCobrarFecha] = useState('')
@@ -682,6 +687,75 @@ if (duplicado) {
     setEditandoCliente(false)
     cargarClientesDB(user.id)
   }
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+const cargarReporteNomina = async () => {
+  if (!user) return
+  setLoadingReporte(true)
+  setTotalDesembolsado(null)
+  const inicio = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-01`
+  const fin = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-31`
+  const { data } = await supabase
+    .from('nomina_programada')
+    .select('*')
+    .eq('user_id', user.id)
+    .gte('created_at', inicio)
+    .lte('created_at', fin + 'T23:59:59')
+  if (data) {
+    setNominaReporte(data)
+    const pagados = data.filter((n: any) => n.estado === 'Pagado')
+    setTotalDesembolsado(pagados.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0))
+  }
+  setLoadingReporte(false)
+}
+
+const descargarResumen = () => {
+  const pagados = nominaReporte.filter(n => n.estado === 'Pagado')
+  const fmt = (v: number) => Math.round(v || 0)
+  const rows = [
+    [`RESUMEN NÓMINA - ${meses[reporteMes-1].toUpperCase()} ${reporteAnio}`],
+    [`Empleados pagados: ${pagados.length}`],
+    [],
+    ['CONCEPTO','CUENTA CONTABLE','VALOR'],
+    ['Salario Básico','510506', pagados.reduce((a,b)=>a+fmt(b.sueldo_base),0)],
+    ['Auxilio de Transporte','510527', pagados.reduce((a,b)=>a+fmt(b.auxilio_transporte),0)],
+    ['Bonificaciones','510548', pagados.reduce((a,b)=>a+fmt(b.bonificaciones),0)],
+    ['Primas de Servicios','510530', pagados.reduce((a,b)=>a+fmt(b.abono_prima),0)],
+    ['Deducción Salud (4%)','2370', -pagados.reduce((a,b)=>a+fmt(b.salud),0)],
+    ['Deducción Pensión (4%)','2380', -pagados.reduce((a,b)=>a+fmt(b.pension),0)],
+    [],
+    ['TOTAL NETO A PAGAR','', pagados.reduce((a,b)=>a+fmt(b.neto_pagar),0)],
+  ]
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'})
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `Resumen_Nomina_${meses[reporteMes-1]}_${reporteAnio}.csv`
+  a.click()
+}
+
+const descargarAliaddo = () => {
+  const pagados = nominaReporte.filter(n => n.estado === 'Pagado')
+  const fmt = (v: number) => Math.round(v || 0)
+  const fecha = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-30`
+  const rows: any[] = [['Fecha','TipoDocumento','Numero','NIT','Nombre','Cuenta','Concepto','Debito','Credito']]
+  pagados.forEach((n, i) => {
+    const num = `NOM${reporteAnio}${String(reporteMes).padStart(2,'0')}${String(i+1).padStart(3,'0')}`
+    if (fmt(n.sueldo_base)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510506','Salario Básico',fmt(n.sueldo_base),0])
+    if (fmt(n.auxilio_transporte)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510527','Auxilio Transporte',fmt(n.auxilio_transporte),0])
+    if (fmt(n.bonificaciones)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510548','Bonificaciones',fmt(n.bonificaciones),0])
+    if (fmt(n.abono_prima)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510530','Prima Servicios',fmt(n.abono_prima),0])
+    if (fmt(n.salud)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'2370','Deducción Salud',0,fmt(n.salud)])
+    if (fmt(n.pension)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'2380','Deducción Pensión',0,fmt(n.pension)])
+    rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'2610','Neto a Pagar',0,fmt(n.neto_pagar)])
+  })
+  const csv = rows.map(r => r.map((c: any)=>`"${c}"`).join(',')).join('\n')
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'})
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `Aliaddo_Nomina_${meses[reporteMes-1]}_${reporteAnio}.csv`
+  a.click()
+}
   const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
   const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorCobrar = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
@@ -2000,15 +2074,116 @@ const facturasFiltradas = facturas.filter(f => {
   </div>
 )}
 
-{['reportes', 'configuracion'].includes(seccion) && (
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
-            <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
-              <p className="text-lg font-medium">Modulo en construccion</p>
-              <p className="text-sm mt-2">Esta seccion estara disponible proximamente</p>
+{seccion === 'reportes' && (
+  <div>
+    <h2 className="text-2xl font-bold text-slate-800 mb-2">Reportes de Nómina</h2>
+    <p className="text-slate-500 text-sm mb-6">Genera reportes consolidados para tu contador</p>
+
+    <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+      <h3 className="text-lg font-semibold text-slate-800 mb-4">Selecciona el período</h3>
+      <div className="flex gap-4 items-end">
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">Mes</label>
+          <select value={reporteMes} onChange={e => setReporteMes(Number(e.target.value))}
+            className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            {meses.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">Año</label>
+          <select value={reporteAnio} onChange={e => setReporteAnio(Number(e.target.value))}
+            className="px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+        <button onClick={cargarReporteNomina} disabled={loadingReporte}
+          className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-6 py-2 rounded-xl text-sm font-medium">
+          {loadingReporte ? 'Cargando...' : 'Generar Reporte'}
+        </button>
+      </div>
+    </div>
+
+    {totalDesembolsado !== null && (
+      <>
+        <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-6 mb-6 text-center">
+          <p className="text-emerald-700 text-sm font-medium mb-1">Total desembolsado en nómina — {meses[reporteMes-1]} {reporteAnio}</p>
+          <p className="text-4xl font-bold text-emerald-600">${Math.round(totalDesembolsado).toLocaleString()}</p>
+          <p className="text-slate-500 text-xs mt-2">{nominaReporte.filter(n=>n.estado==='Pagado').length} empleados pagados</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">📊</span>
+              <div>
+                <h3 className="font-semibold text-slate-800">Resumen para el Contador</h3>
+                <p className="text-xs text-slate-500">Totales por cuenta contable</p>
+              </div>
             </div>
+            <div className="space-y-2 mb-4 text-sm">
+              {[
+                {label:'Salario Básico',cuenta:'510506',campo:'sueldo_base'},
+                {label:'Aux. Transporte',cuenta:'510527',campo:'auxilio_transporte'},
+                {label:'Bonificaciones',cuenta:'510548',campo:'bonificaciones'},
+                {label:'Primas',cuenta:'510530',campo:'abono_prima'},
+              ].map(({label,cuenta,campo}) => (
+                <div key={cuenta} className="flex justify-between">
+                  <span className="text-slate-600">{label} <span className="text-xs text-slate-400">({cuenta})</span></span>
+                  <span className="font-medium">${Math.round(nominaReporte.filter(n=>n.estado==='Pagado').reduce((a:number,b:any)=>a+Math.round(b[campo]||0),0)).toLocaleString()}</span>
+                </div>
+              ))}
+              <div className="border-t pt-2">
+                {[
+                  {label:'Deducción Salud',cuenta:'2370',campo:'salud'},
+                  {label:'Deducción Pensión',cuenta:'2380',campo:'pension'},
+                ].map(({label,cuenta,campo}) => (
+                  <div key={cuenta} className="flex justify-between text-red-600">
+                    <span>{label} <span className="text-xs text-red-400">({cuenta})</span></span>
+                    <span className="font-medium">-${Math.round(nominaReporte.filter(n=>n.estado==='Pagado').reduce((a:number,b:any)=>a+Math.round(b[campo]||0),0)).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button onClick={descargarResumen}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-xl text-sm font-medium">
+              ⬇️ Descargar Resumen CSV
+            </button>
           </div>
-        )}
+
+          <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">📋</span>
+              <div>
+                <h3 className="font-semibold text-slate-800">Formato Aliaddo</h3>
+                <p className="text-xs text-slate-500">Carga masiva Documentos de Gasto</p>
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-4 mb-4 text-xs text-slate-600 space-y-1">
+              <p>✅ Solo incluye registros <strong>Pagados</strong></p>
+              <p>✅ Formato plano con cuentas contables</p>
+              <p>✅ Listo para importar en Aliaddo</p>
+              <p>✅ {nominaReporte.filter(n=>n.estado==='Pagado').length} empleados · {nominaReporte.filter(n=>n.estado==='Pagado').length * 6} líneas aprox.</p>
+            </div>
+            <button onClick={descargarAliaddo}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-xl text-sm font-medium">
+              ⬇️ Descargar Formato Aliaddo CSV
+            </button>
+          </div>
+        </div>
+      </>
+    )}
+  </div>
+)}
+
+{seccion === 'configuracion' && (
+  <div>
+    <h2 className="text-2xl font-bold text-slate-800 mb-6">Configuración</h2>
+    <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+      <p className="text-lg font-medium">Modulo en construccion</p>
+      <p className="text-sm mt-2">Esta seccion estara disponible proximamente</p>
+    </div>
+  </div>
+)}
 
       </main>
 
