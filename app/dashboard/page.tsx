@@ -151,66 +151,100 @@ function NominaRow({ n, supabase, user, setVisorNominaUrl, cargarNominaProgramad
           )}
         </td>
       </tr>
-      {expandido && (
-        <tr className="bg-slate-50">
-          <td colSpan={6} className="px-6 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">💰 Devengados</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Sueldo Base</span>
-                    <span className="font-medium">${n.sueldo_base?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Aux. Transporte</span>
-                    <span className="font-medium">${n.auxilio_transporte?.toLocaleString() || 0}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Bonificaciones</span>
-                    <span className="font-medium">${n.bonificaciones?.toLocaleString() || 0}</span>
-                  </div>
-                  {n.abono_prima > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Prima / Abono</span>
-                      <span className="font-medium text-blue-600">${n.abono_prima?.toLocaleString()}</span>
-                    </div>
-                  )}
-                  {n.saldo_anterior > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Saldo Anterior</span>
-                      <span className="font-medium text-purple-600">${n.saldo_anterior?.toLocaleString()}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-semibold border-t pt-1 mt-1">
-                    <span className="text-slate-700">Neto a Pagar</span>
-                    <span className="text-emerald-600">${n.neto_pagar?.toLocaleString()}</span>
-                  </div>
-                </div>
+     {expandido && (
+  <tr className="bg-slate-50 border-b">
+    <td colSpan={6} className="px-8 py-4">
+      <div className="grid grid-cols-2 gap-6 text-xs">
+
+        {/* DEVENGADOS */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">💰 Devengados</p>
+          <div className="space-y-2">
+            {n.sueldo_base > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Sueldo Básico</span>
+                <span className="font-medium">${n.sueldo_base?.toLocaleString()}</span>
               </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">📋 Información</p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Área</span>
-                    <span className="font-medium">{n.area}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Cédula</span>
-                    <span className="font-medium">{n.cedula}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Estado</span>
-                    <span className={`font-medium ${n.estado === 'Pagado' ? 'text-green-600' : 'text-yellow-600'}`}>
-                      {n.estado}
-                    </span>
-                  </div>
-                </div>
+            )}
+            {n.auxilio_transporte > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Aux. Transporte</span>
+                <span className="font-medium">${n.auxilio_transporte?.toLocaleString()}</span>
               </div>
+            )}
+            {n.bonificaciones > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Bonificaciones / Descansos</span>
+                <span className="font-medium">${n.bonificaciones?.toLocaleString()}</span>
+              </div>
+            )}
+            {n.abono_prima > 0 && (
+              <div className="flex justify-between">
+                <span className="text-blue-500">Abono Prima</span>
+                <span className="font-medium text-blue-600">${n.abono_prima?.toLocaleString()}</span>
+              </div>
+            )}
+            {n.saldo_anterior > 0 && (
+              <div className="flex justify-between">
+                <span className="text-purple-500">Saldo Mes Anterior</span>
+                <span className="font-medium text-purple-600">${n.saldo_anterior?.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t pt-2 mt-1">
+              <span className="text-slate-500 font-medium">Total Devengado</span>
+              <span className="font-semibold">
+                ${((n.sueldo_base || 0) + (n.auxilio_transporte || 0) + (n.bonificaciones || 0) + (n.abono_prima || 0) + (n.saldo_anterior || 0)).toLocaleString()}
+              </span>
             </div>
-          </td>
-        </tr>
-      )}
+          </div>
+        </div>
+
+        {/* DEDUCCIONES Y NETO */}
+        <div className="flex flex-col gap-3">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">➖ Deducciones</p>
+            <div className="space-y-2">
+              {n.pension > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Pensión (4%)</span>
+                  <span className="font-medium text-red-500">-${n.pension?.toLocaleString()}</span>
+                </div>
+              )}
+              {n.salud > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Salud (4%)</span>
+                  <span className="font-medium text-red-500">-${n.salud?.toLocaleString()}</span>
+                </div>
+              )}
+              {n.total_deducciones > 0 && (
+                <div className="flex justify-between border-t pt-2 mt-1">
+                  <span className="text-slate-500 font-medium">Total Deducciones</span>
+                  <span className="font-semibold text-red-500">-${n.total_deducciones?.toLocaleString()}</span>
+                </div>
+              )}
+              {!n.pension && !n.salud && (
+                <p className="text-slate-400 italic">Sin deducciones registradas</p>
+              )}
+            </div>
+          </div>
+
+          {/* NETO FINAL */}
+          <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+            <div className="flex justify-between items-center">
+              <span className="font-bold text-slate-700 uppercase tracking-wide text-xs">Neto a Pagar</span>
+              <span className="font-bold text-emerald-600 text-base">${n.neto_pagar?.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center mt-1">
+              <span className="text-slate-400 text-xs">Área</span>
+              <span className="text-slate-500 text-xs">{n.area}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </td>
+  </tr>
+)}
     </>
   )
 }
