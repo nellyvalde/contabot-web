@@ -698,36 +698,29 @@ const cargarReportePeriodo = async () => {
   setNominaReporte([])
   setFacturasReporte([])
 
-  // Nómina: trae TODOS los Pagados y filtra por mes/año en el cliente
+  const periodo = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}`
+
   const { data: dataNomina } = await supabase
     .from('nomina_programada')
     .select('*')
     .eq('user_id', user.id)
     .eq('estado', 'Pagado')
+    .eq('periodo_contable', periodo)
 
   if (dataNomina) {
-    const filtrada = dataNomina.filter((n: any) => {
-      const d = new Date(n.created_at)
-      return d.getMonth() + 1 === reporteMes && d.getFullYear() === reporteAnio
-    })
-    setNominaReporte(filtrada)
-    setTotalDesembolsado(filtrada.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0))
+    setNominaReporte(dataNomina)
+    setTotalDesembolsado(
+      dataNomina.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0)
+    )
   }
 
-  // Facturas: filtra por mes/año del campo fecha
   const { data: dataFact } = await supabase
     .from('facturas')
     .select('*')
     .eq('user_id', user.id)
+    .eq('periodo_contable', periodo)
 
-  if (dataFact) {
-    const filtrada = dataFact.filter((f: any) => {
-      if (!f.fecha) return false
-      const partes = f.fecha.split('-')
-      return parseInt(partes[0]) === reporteAnio && parseInt(partes[1]) === reporteMes
-    })
-    setFacturasReporte(filtrada)
-  }
+  if (dataFact) setFacturasReporte(dataFact)
 
   setLoadingReporte(false)
 }
