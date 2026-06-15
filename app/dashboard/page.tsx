@@ -285,6 +285,8 @@ export default function Dashboard() {
   const [facturas, setFacturas] = useState<any[]>([])
   const [seccion, setSeccion] = useState('dashboard')
   const [reporteMes, setReporteMes] = useState(new Date().getMonth() + 1)
+  const [reporteTab, setReporteTab] = useState('nomina')
+  const [facturasReporte, setFacturasReporte] = useState<any[]>([])
   const [reporteAnio, setReporteAnio] = useState(new Date().getFullYear())
   const [nominaReporte, setNominaReporte] = useState<any[]>([])
   const [loadingReporte, setLoadingReporte] = useState(false)
@@ -689,24 +691,51 @@ if (duplicado) {
   }
   const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const cargarReporteNomina = async () => {
+const cargarReportePeriodo = async () => {
   if (!user) return
   setLoadingReporte(true)
   setTotalDesembolsado(null)
   const inicio = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-01`
   const fin = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-31`
-  const { data } = await supabase
-    .from('nomina_programada')
-    .select('*')
-    .eq('user_id', user.id)
-    .gte('created_at', inicio)
-    .lte('created_at', fin + 'T23:59:59')
-  if (data) {
-    setNominaReporte(data)
-    const pagados = data.filter((n: any) => n.estado === 'Pagado')
+
+  const { data: dataNomina } = await supabase
+    .from('nomina_programada').select('*').eq('user_id', user.id)
+    .gte('created_at', inicio).lte('created_at', fin + 'T23:59:59')
+  if (dataNomina) {
+    setNominaReporte(dataNomina)
+    const pagados = dataNomina.filter((n: any) => n.estado === 'Pagado')
     setTotalDesembolsado(pagados.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0))
   }
+
+  const { data: dataFact } = await supabase
+    .from('facturas').select('*').eq('user_id', user.id)
+    .gte('fecha', inicio).lte('fecha', fin)
+  if (dataFact) setFacturasReporte(dataFact)
+
   setLoadingReporte(false)
+}
+
+const descargarAliaddoVentasCompras = () => {
+  const docs = facturasReporte.filter(f => ['Factura de Venta','Factura de Compra','Gasto'].includes(f.categoria))
+  const fmt = (v: number) => Math.round(v || 0)
+  const rows: any[] = [['Fecha','TipoDocumento','Numero','NIT','Nombre','Cuenta','Concepto','Debito','Credito']]
+  docs.forEach((f, i) => {
+    const num = f.numero_factura || `DOC${String(i+1).padStart(4,'0')}`
+    if (f.categoria === 'Factura de Venta') {
+      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'1305',f.descripcion||'Ingreso',fmt(f.valor),0])
+      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'4135',f.descripcion||'Ingreso',0,fmt(f.valor)])
+      if (fmt(f.iva)>0) rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'2408','IVA',0,fmt(f.iva)])
+    } else {
+      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'5105',f.descripcion||f.categoria,fmt(f.valor),0])
+      rows.push([f.fecha,'FACTURA',num,'-',f.proveedor,'2205',f.descripcion||f.categoria,0,fmt(f.valor)])
+    }
+  })
+  const csv = rows.map(r => r.map((c: any)=>`"${c}"`).join(',')).join('\n')
+  const blob = new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'})
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `Aliaddo_VentasCompras_${meses[reporteMes-1]}_${reporteAnio}.csv`
+  a.click()
 }
 
 const descargarResumen = () => {
@@ -2076,12 +2105,12 @@ const facturasFiltradas = facturas.filter(f => {
 
 {seccion === 'reportes' && (
   <div>
-    <h2 className="text-2xl font-bold text-slate-800 mb-2">Reportes de Nómina</h2>
-    <p className="text-slate-500 text-sm mb-6">Genera reportes consolidados para tu contador</p>
+    <h2 className="text-2xl font-bold text-slate-800 mb-1">Centro de Reportes</h2>
+    <p className="text-slate-500 text-sm mb-6">Reportes consolidados para nómina, ventas y finanzas</p>
 
-    <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
-      <h3 className="text-lg font-semibold text-slate-800 mb-4">Selecciona el período</h3>
-      <div className="flex gap-4 items-end">
+    {/* FILTRO UNIFICADO */}
+    <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
+      <div className="flex flex-wrap gap-4 items-end">
         <div>
           <label className="text-xs text-slate-500 mb-1 block">Mes</label>
           <select value={reporteMes} onChange={e => setReporteMes(Number(e.target.value))}
@@ -2096,82 +2125,187 @@ const facturasFiltradas = facturas.filter(f => {
             {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
-        <button onClick={cargarReporteNomina} disabled={loadingReporte}
+        <button onClick={cargarReportePeriodo} disabled={loadingReporte}
           className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-300 text-white px-6 py-2 rounded-xl text-sm font-medium">
-          {loadingReporte ? 'Cargando...' : 'Generar Reporte'}
+          {loadingReporte ? 'Cargando...' : '🔄 Generar Reporte'}
         </button>
       </div>
     </div>
 
-    {totalDesembolsado !== null && (
+    {/* TABS */}
+    <div className="flex gap-2 mb-6">
+      {[{key:'nomina',label:'💼 Nómina'},{key:'ventas',label:'📄 Ventas/Compras'},{key:'finanzas',label:'📈 Finanzas'}].map(t => (
+        <button key={t.key} onClick={() => setReporteTab(t.key)}
+          className={`px-5 py-2 rounded-xl text-sm font-medium transition-colors ${reporteTab === t.key ? 'bg-emerald-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 shadow-sm'}`}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+
+    {/* TAB: NÓMINA */}
+    {reporteTab === 'nomina' && totalDesembolsado !== null && (
       <>
         <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-6 mb-6 text-center">
           <p className="text-emerald-700 text-sm font-medium mb-1">Total desembolsado en nómina — {meses[reporteMes-1]} {reporteAnio}</p>
           <p className="text-4xl font-bold text-emerald-600">${Math.round(totalDesembolsado).toLocaleString()}</p>
           <p className="text-slate-500 text-xs mt-2">{nominaReporte.filter(n=>n.estado==='Pagado').length} empleados pagados</p>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-4">
               <span className="text-2xl">📊</span>
-              <div>
-                <h3 className="font-semibold text-slate-800">Resumen para el Contador</h3>
-                <p className="text-xs text-slate-500">Totales por cuenta contable</p>
-              </div>
+              <div><h3 className="font-semibold text-slate-800">Resumen para el Contador</h3><p className="text-xs text-slate-500">Totales por cuenta contable</p></div>
             </div>
             <div className="space-y-2 mb-4 text-sm">
-              {[
-                {label:'Salario Básico',cuenta:'510506',campo:'sueldo_base'},
-                {label:'Aux. Transporte',cuenta:'510527',campo:'auxilio_transporte'},
-                {label:'Bonificaciones',cuenta:'510548',campo:'bonificaciones'},
-                {label:'Primas',cuenta:'510530',campo:'abono_prima'},
-              ].map(({label,cuenta,campo}) => (
+              {[{label:'Salario Básico',cuenta:'510506',campo:'sueldo_base'},{label:'Aux. Transporte',cuenta:'510527',campo:'auxilio_transporte'},{label:'Bonificaciones',cuenta:'510548',campo:'bonificaciones'},{label:'Primas',cuenta:'510530',campo:'abono_prima'}].map(({label,cuenta,campo})=>(
                 <div key={cuenta} className="flex justify-between">
                   <span className="text-slate-600">{label} <span className="text-xs text-slate-400">({cuenta})</span></span>
-                  <span className="font-medium">${Math.round(nominaReporte.filter(n=>n.estado==='Pagado').reduce((a:number,b:any)=>a+Math.round(b[campo]||0),0)).toLocaleString()}</span>
+                  <span className="font-medium">${nominaReporte.filter(n=>n.estado==='Pagado').reduce((a:number,b:any)=>a+Math.round(b[campo]||0),0).toLocaleString()}</span>
                 </div>
               ))}
-              <div className="border-t pt-2">
-                {[
-                  {label:'Deducción Salud',cuenta:'2370',campo:'salud'},
-                  {label:'Deducción Pensión',cuenta:'2380',campo:'pension'},
-                ].map(({label,cuenta,campo}) => (
+              <div className="border-t pt-2 space-y-2">
+                {[{label:'Deducción Salud',cuenta:'2370',campo:'salud'},{label:'Deducción Pensión',cuenta:'2380',campo:'pension'}].map(({label,cuenta,campo})=>(
                   <div key={cuenta} className="flex justify-between text-red-600">
                     <span>{label} <span className="text-xs text-red-400">({cuenta})</span></span>
-                    <span className="font-medium">-${Math.round(nominaReporte.filter(n=>n.estado==='Pagado').reduce((a:number,b:any)=>a+Math.round(b[campo]||0),0)).toLocaleString()}</span>
+                    <span>-${nominaReporte.filter(n=>n.estado==='Pagado').reduce((a:number,b:any)=>a+Math.round(b[campo]||0),0).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <button onClick={descargarResumen}
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-xl text-sm font-medium">
-              ⬇️ Descargar Resumen CSV
-            </button>
+            <button onClick={descargarResumen} className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-xl text-sm font-medium">⬇️ Descargar Resumen CSV</button>
           </div>
-
           <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-4">
               <span className="text-2xl">📋</span>
-              <div>
-                <h3 className="font-semibold text-slate-800">Formato Aliaddo</h3>
-                <p className="text-xs text-slate-500">Carga masiva Documentos de Gasto</p>
-              </div>
+              <div><h3 className="font-semibold text-slate-800">Formato Aliaddo</h3><p className="text-xs text-slate-500">Carga masiva Documentos de Gasto</p></div>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 mb-4 text-xs text-slate-600 space-y-1">
-              <p>✅ Solo incluye registros <strong>Pagados</strong></p>
+              <p>✅ Solo registros <strong>Pagados</strong></p>
               <p>✅ Formato plano con cuentas contables</p>
               <p>✅ Listo para importar en Aliaddo</p>
-              <p>✅ {nominaReporte.filter(n=>n.estado==='Pagado').length} empleados · {nominaReporte.filter(n=>n.estado==='Pagado').length * 6} líneas aprox.</p>
+              <p>✅ {nominaReporte.filter(n=>n.estado==='Pagado').length} empleados</p>
             </div>
-            <button onClick={descargarAliaddo}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-xl text-sm font-medium">
-              ⬇️ Descargar Formato Aliaddo CSV
-            </button>
+            <button onClick={descargarAliaddo} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-xl text-sm font-medium">⬇️ Descargar Formato Aliaddo CSV</button>
           </div>
         </div>
       </>
     )}
+
+    {/* TAB: VENTAS/COMPRAS */}
+    {reporteTab === 'ventas' && facturasReporte.length > 0 && (
+      <>
+        {(() => {
+          const ventas = facturasReporte.filter(f => f.categoria === 'Factura de Venta')
+          const compras = facturasReporte.filter(f => ['Factura de Compra','Gasto'].includes(f.categoria))
+          const totalVentas = ventas.reduce((a,b) => a + Math.round(b.valor||0), 0)
+          const totalCompras = compras.reduce((a,b) => a + Math.round(b.valor||0), 0)
+          return (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-5 text-center">
+                  <p className="text-emerald-700 text-sm font-medium">Total Ingresos</p>
+                  <p className="text-3xl font-bold text-emerald-600 mt-1">${totalVentas.toLocaleString()}</p>
+                  <p className="text-slate-500 text-xs mt-1">{ventas.length} facturas de venta</p>
+                </div>
+                <div className="bg-red-50 border-2 border-red-400 rounded-2xl p-5 text-center">
+                  <p className="text-red-700 text-sm font-medium">Total Gastos</p>
+                  <p className="text-3xl font-bold text-red-600 mt-1">${totalCompras.toLocaleString()}</p>
+                  <p className="text-slate-500 text-xs mt-1">{compras.length} documentos de compra/gasto</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                  <h3 className="font-semibold text-slate-800 mb-3">💰 Facturas de Venta</h3>
+                  <div className="space-y-2 text-sm max-h-64 overflow-y-auto">
+                    {ventas.slice(0,10).map((f,i) => (
+                      <div key={i} className="flex justify-between border-b pb-1">
+                        <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
+                        <span className="font-medium text-emerald-600 ml-2">${Math.round(f.valor||0).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    {ventas.length > 10 && <p className="text-slate-400 text-xs text-center">+{ventas.length-10} más...</p>}
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                  <h3 className="font-semibold text-slate-800 mb-3">🧾 Compras y Gastos</h3>
+                  <div className="space-y-2 text-sm max-h-64 overflow-y-auto">
+                    {compras.slice(0,10).map((f,i) => (
+                      <div key={i} className="flex justify-between border-b pb-1">
+                        <span className="text-slate-600 truncate flex-1">{f.proveedor}</span>
+                        <span className="font-medium text-red-600 ml-2">${Math.round(f.valor||0).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    {compras.length > 10 && <p className="text-slate-400 text-xs text-center">+{compras.length-10} más...</p>}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <button onClick={descargarAliaddoVentasCompras} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-medium">⬇️ Descargar Formato Aliaddo (Ventas/Compras)</button>
+              </div>
+            </>
+          )
+        })()}
+      </>
+    )}
+
+    {/* TAB: FINANZAS */}
+    {reporteTab === 'finanzas' && (facturasReporte.length > 0 || totalDesembolsado !== null) && (
+      <>
+        {(() => {
+          const totalVentas = facturasReporte.filter(f=>f.categoria==='Factura de Venta').reduce((a,b)=>a+Math.round(b.valor||0),0)
+          const totalGastos = facturasReporte.filter(f=>['Factura de Compra','Gasto'].includes(f.categoria)).reduce((a,b)=>a+Math.round(b.valor||0),0)
+          const totalNomina = totalDesembolsado || 0
+          const utilidad = totalVentas - totalGastos - totalNomina
+          return (
+            <>
+              <div className={`rounded-2xl p-6 mb-6 text-center border-2 ${utilidad >= 0 ? 'bg-emerald-50 border-emerald-500' : 'bg-red-50 border-red-500'}`}>
+                <p className={`text-sm font-medium mb-1 ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>Utilidad Neta — {meses[reporteMes-1]} {reporteAnio}</p>
+                <p className={`text-5xl font-bold ${utilidad>=0?'text-emerald-600':'text-red-600'}`}>${Math.abs(utilidad).toLocaleString()}</p>
+                <p className="text-slate-500 text-xs mt-2">{utilidad >= 0 ? '📈 Ganancia del período' : '📉 Pérdida del período'}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <h3 className="font-semibold text-slate-800 mb-4">Desglose del Período</h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-xl">
+                    <span className="text-slate-700 font-medium">💰 Total Ingresos (Ventas)</span>
+                    <span className="font-bold text-emerald-600 text-lg">+${totalVentas.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-red-50 rounded-xl">
+                    <span className="text-slate-700 font-medium">🧾 Total Compras y Gastos</span>
+                    <span className="font-bold text-red-600 text-lg">-${totalGastos.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl">
+                    <span className="text-slate-700 font-medium">💼 Total Nómina Pagada</span>
+                    <span className="font-bold text-orange-600 text-lg">-${Math.round(totalNomina).toLocaleString()}</span>
+                  </div>
+                  <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${utilidad>=0?'bg-emerald-100 border-emerald-400':'bg-red-100 border-red-400'}`}>
+                    <span className="text-slate-800 font-bold text-lg">UTILIDAD NETA</span>
+                    <span className={`font-bold text-xl ${utilidad>=0?'text-emerald-700':'text-red-700'}`}>${utilidad.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )
+        })()}
+      </>
+    )}
+
+    {totalDesembolsado === null && facturasReporte.length === 0 && (
+      <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+        <p className="text-4xl mb-3">📊</p>
+        <p className="font-medium">Selecciona un período y haz click en Generar Reporte</p>
+      </div>
+    )}
+  </div>
+)}
+
+{seccion === 'configuracion' && (
+  <div>
+    <h2 className="text-2xl font-bold text-slate-800 mb-6">Configuración</h2>
+    <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+      <p className="text-lg font-medium">Modulo en construccion</p>
+      <p className="text-sm mt-2">Esta seccion estara disponible proximamente</p>
+    </div>
   </div>
 )}
 
