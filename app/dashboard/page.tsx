@@ -148,7 +148,58 @@ function NominaRow({ n, supabase, user, setVisorNominaUrl, cargarNominaProgramad
           {n.archivo_url && (
             <button onClick={(e) => { e.stopPropagation(); setVisorNominaUrl(n.archivo_url) }}
               className="text-blue-400 hover:text-blue-600">👁</button>
-          )}
+      <button
+  onClick={(e) => {
+    e.stopPropagation()
+    const html = `
+      <html><head><title>Desprendible - ${n.nombre_empleado}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+        h1 { color: #059669; font-size: 18px; }
+        h2 { font-size: 14px; color: #666; margin-top: 20px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+        .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+        .total { font-weight: bold; border-top: 2px solid #333; margin-top: 8px; padding-top: 8px; font-size: 15px; }
+        .neto { color: #059669; font-size: 18px; font-weight: bold; }
+        .firma { margin-top: 60px; border-top: 1px solid #333; width: 200px; text-align: center; font-size: 12px; color: #666; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #059669; padding-bottom: 10px; }
+      </style></head><body>
+      <div class="header">
+        <div>
+          <h1>SODEPORTC SAS</h1>
+          <p style="font-size:12px;color:#666;margin:0">NIT 901.183.507-5</p>
+        </div>
+        <div style="text-align:right;font-size:12px;color:#666">
+          <p><b>Desprendible de Pago</b></p>
+          <p>${new Date().toLocaleDateString('es-CO', {month:'long', year:'numeric'})}</p>
+        </div>
+      </div>
+      <p><b>Empleado:</b> ${n.nombre_empleado}</p>
+      <p><b>Cédula:</b> ${n.cedula} &nbsp;&nbsp; <b>Área:</b> ${n.area}</p>
+      <h2>💰 Devengados</h2>
+      ${n.sueldo_base > 0 ? `<div class="row"><span>Sueldo Básico</span><span>$${n.sueldo_base?.toLocaleString()}</span></div>` : ''}
+      ${n.auxilio_transporte > 0 ? `<div class="row"><span>Aux. Transporte</span><span>$${n.auxilio_transporte?.toLocaleString()}</span></div>` : ''}
+      ${n.bonificaciones > 0 ? `<div class="row"><span>Bonificaciones / Descansos</span><span>$${n.bonificaciones?.toLocaleString()}</span></div>` : ''}
+      ${n.abono_prima > 0 ? `<div class="row"><span>Abono Prima</span><span>$${n.abono_prima?.toLocaleString()}</span></div>` : ''}
+      ${n.saldo_anterior > 0 ? `<div class="row"><span>Saldo Mes Anterior</span><span>$${n.saldo_anterior?.toLocaleString()}</span></div>` : ''}
+      ${n.pension > 0 || n.salud > 0 ? `<h2>➖ Deducciones</h2>` : ''}
+      ${n.pension > 0 ? `<div class="row"><span>Pensión (4%)</span><span>-$${n.pension?.toLocaleString()}</span></div>` : ''}
+      ${n.salud > 0 ? `<div class="row"><span>Salud (4%)</span><span>-$${n.salud?.toLocaleString()}</span></div>` : ''}
+      <div class="row total"><span>NETO A PAGAR</span><span class="neto">$${n.neto_pagar?.toLocaleString()}</span></div>
+      <div class="firma">
+        <p style="margin-top:8px">Firma del Empleado</p>
+      </div>
+      <script>window.print()</script>
+      </body></html>
+    `
+    const w = window.open('', '_blank')
+    w?.document.write(html)
+    w?.document.close()
+  }}
+  className="text-emerald-500 hover:text-emerald-700 text-xs ml-2"
+  title="Generar Desprendible"
+>
+  📄
+</button>          )}
         </td>
       </tr>
      {expandido && (
@@ -2056,7 +2107,18 @@ const facturasFiltradas = facturas.filter(f => {
         </div>
       </div>
       <div className="flex-1 overflow-hidden rounded-b-2xl">
-        <iframe src={visorNominaUrl} className="w-full h-full border-0" title="Comprobante" />
+        {visorNominaUrl?.startsWith('http') ? (
+  <iframe src={visorNominaUrl} className="w-full h-full border-0" title="Comprobante" />
+) : (
+  <div className="flex items-center justify-center h-full text-slate-400 text-center p-8">
+    <div>
+      <p className="text-4xl mb-4">📄</p>
+      <p className="font-medium text-slate-600">Soporte registrado</p>
+      <p className="text-sm mt-2">{visorNominaUrl}</p>
+      <p className="text-xs mt-4 text-slate-400">El archivo fue procesado por email automáticamente</p>
+    </div>
+  </div>
+)}
       </div>
     </div>
   </div>
