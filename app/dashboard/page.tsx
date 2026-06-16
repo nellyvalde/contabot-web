@@ -169,8 +169,8 @@ function DocsporClasificar({ userId, supabase }: { userId: string, supabase: any
             {docsFiltrados.map((doc: any) => (
               <tr key={doc.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-3">
-                  {doc.archivo_url ? (
-                    <button onClick={() => setPdfVisor(doc.archivo_url)}
+                  {(doc.archivo_url || doc.archivo_data) ? (
+                    <button onClick={() => setPdfVisor(doc.archivo_url || `data:application/pdf;base64,${doc.archivo_data}`)}
                       className="text-blue-500 hover:text-blue-700 text-lg" title="Ver PDF">👁</button>
                   ) : <span className="text-slate-300 text-lg">—</span>}
                 </td>
