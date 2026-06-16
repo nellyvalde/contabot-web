@@ -377,6 +377,7 @@ export default function Dashboard() {
   const [facturas, setFacturas] = useState<any[]>([])
   const [seccion, setSeccion] = useState('dashboard')
   const [reporteMes, setReporteMes] = useState(new Date().getMonth() + 1)
+  const [sincronizando, setSincronizando] = useState(false)
   const [reporteTab, setReporteTab] = useState('nomina')
   const [facturasReporte, setFacturasReporte] = useState<any[]>([])
   const [reporteAnio, setReporteAnio] = useState(new Date().getFullYear())
@@ -438,6 +439,17 @@ const [filtroDoc, setFiltroDoc] = useState('todos')
       .order('created_at', { ascending: false })
     if (data) setFacturas(data)
   }
+  const sincronizarAhora = async () => {
+  if (!user) return
+  setSincronizando(true)
+  try {
+    await fetch('/api/sincronizar', { method: 'POST' })
+  } catch {}
+  setTimeout(async () => {
+    await cargarFacturas(user.id)
+    setSincronizando(false)
+  }, 10000)
+}
   const cargarNominaProgramada = async (userId: string) => {
   const { data } = await supabase.from('nomina_programada').select('*').eq('user_id', userId).order('created_at', { ascending: false })
   if (data) setNominaProgramada(data)
@@ -1037,7 +1049,13 @@ const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva
 
         {seccion === 'dashboard' && (
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
+            <div className="flex items-center justify-between mb-6">
+  <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+  <button onClick={sincronizarAhora} disabled={sincronizando}
+    className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+    {sincronizando ? '🔄 Sincronizando...' : '🔄 Sincronizar Ahora'}
+  </button>
+</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
                 <p className="text-slate-500 text-sm">Ingresos del mes</p>
@@ -1081,8 +1099,13 @@ const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva
 
         {(seccion === 'documentos' || seccion === 'revision') && (
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-6">{seccion === 'revision' ? 'Revision IA' : 'Documentos'}</h2>
-
+            <div className="flex items-center justify-between mb-6">
+  <h2 className="text-2xl font-bold text-slate-800">{seccion === 'revision' ? 'Revision IA' : 'Documentos'}</h2>
+  <button onClick={sincronizarAhora} disabled={sincronizando}
+    className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2">
+    {sincronizando ? '🔄 Sincronizando...' : '🔄 Sincronizar Ahora'}
+  </button>
+</div>
             <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
               <h3 className="text-lg font-semibold text-slate-800 mb-4">Subir Documento</h3>
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
