@@ -1,0 +1,1400 @@
+==============================================================================
+CONTABOT - PAQUETE COMPLETO DE DESARROLLO
+Generado para continuar el desarrollo en el proyecto ContaBot de Claude
+==============================================================================
+
+==============================================================================
+ARCHIVO: README.md
+==============================================================================
+# ContaBot — Arquitectura y guía de continuación
+
+## Stack
+Next.js 14 (App Router) + Tailwind CSS + Supabase (Postgres + Auth + Storage).
+
+## Estructura entregada en este paquete
+```
+contabot/
+├── supabase/schema.sql          -> Tablas: empresas, empleados, periodos_nomina,
+│                                    conceptos_no_salariales, liquidaciones_nomina,
+│                                    documentos, puc_cuentas (+ RLS de ejemplo)
+├── lib/nomina/calculo.ts        -> Motor de cálculo: Ley 1393/2010, aportes
+│                                    salud/pensión/ARL, parafiscales SENA/ICBF/Caja
+├── lib/supabase/client.ts       -> Cliente único de Supabase para el navegador
+├── app/nomina/page.tsx          -> CRUD de empleados + botón "Liquidar nómina"
+├── app/dashboard/page.tsx       -> Resumen cruzado de nómina y documentos
+└── app/documentos/page.tsx      -> Registro y conciliación de documentos soporte
+```
+
+## Variables de entorno requeridas (.env.local)
+```
+NEXT_PUBLIC_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=TU_ANON_KEY
+```
+
+## Cómo instalar el esquema
+1. Abre el SQL Editor de tu proyecto en Supabase.
+2. Pega y ejecuta el contenido de `supabase/schema.sql`.
+3. Crea manualmente una fila en `empresas` con el NIT y razón social reales
+   (todas las páginas de este paquete asumen, por simplicidad, una sola
+   empresa activa; ver "Pendientes" para el caso multi-empresa).
+
+## Reglas contables/legales ya implementadas
+- **Ley 1393 de 2010**: si los pagos no constitutivos de salario superan el
+  40% de la remuneración total, el exceso se suma a la base de aportes
+  (`calcularExcesoLey1393` en `lib/nomina/calculo.ts`).
+- **Aportes a seguridad social**: salud y pensión (empleado/empleador), ARL
+  por clase de riesgo (I a V).
+- **Parafiscales**: SENA, ICBF y Caja de Compensación, con la exoneración de
+  SENA/ICBF para empresas que cumplen la Ley 1607 de 2012 / Ley 2277 de 2022
+  cuando el empleado gana menos de 10 SMMLV.
+- **Catálogo PUC**: cuentas base para sueldos (510506), aportes por pagar
+  (237005/237006/237010), retefuente (236500) y bancos (111000).
+
+⚠️ **Importante**: los porcentajes, el SMMLV y el auxilio de transporte
+cambian cada año por decreto. Las constantes en `PARAMETROS_LEGALES` y
+`TARIFAS_APORTES` deben actualizarse anualmente. Este código es una
+estructura de ingeniería, no una asesoría legal o tributaria — revísalo con
+un contador o revisor fiscal antes de liquidar nómina real.
+
+## Pendientes para acercarse al 100% de automatización
+En orden sugerido de implementación:
+
+1. **Importación de novedades de nómina desde Excel/CSV** (`papaparse` o
+   `xlsx` en el cliente, o un endpoint `/api/leer-nomina` en el servidor)
+   para llenar `conceptos_no_salariales` sin captura manual.
+2. **Carga real de documentos a Supabase Storage** desde
+   `app/documentos/page.tsx` (hoy solo se guarda el metadato, no el archivo).
+3. **OCR/parseo automático de facturas** (por ejemplo con un servicio como
+   Mindee, Textract, o Tesseract self-hosted) para llenar `texto_extraido`,
+   `valor`, `numero_documento` y sugerir la `cuenta_puc` sin que el auxiliar
+   los transcriba a mano.
+4. **Generación del comprobante contable (asiento PUC)** por periodo de
+   nómina: un asiento que debite 5105xx (gasto) y acredite 2370xx (aportes)
+   y 2380xx/1110xx (neto a pagar), a partir de `liquidaciones_nomina`.
+5. **Calendario tributario real**: tabla `vencimientos_dian` con las fechas
+   vigentes según el último dígito del NIT, en vez del arreglo de ejemplo en
+   `app/dashboard/page.tsx`.
+6. **Multi-empresa**: hoy todas las páginas toman la primera fila de
+   `empresas`; si manejarás varios NITs, agrega un selector de empresa y
+   guarda la selección en el estado de sesión o en la URL.
+7. **Endurecer RLS**: las políticas en `schema.sql` están comentadas a modo
+   de ejemplo; deben activarse y probarse antes de producción para que cada
+   usuario solo vea los datos de su propia empresa.
+
+
+==============================================================================
+ARCHIVO: supabase/schema.sql
+==============================================================================
+-- ============================================================================
+-- ContaBot · Esquema base de Supabase (PostgreSQL)
+-- ============================================================================
+-- Ejecutar en el SQL Editor de Supabase. Diseñado para soportar:
+--   - Nómina con aplicación de Ley 1393 de 2010 (40% no salarial)
+--   - Aportes a seguridad social y parafiscales (UGPP)
+--   - Documentos soporte y su conciliación contable
+--   - Catálogo de cuentas PUC para contabilizar automáticamente
+--
+-- ⚠️ Las políticas de Row Level Security (RLS) al final son un punto de
+-- partida. Ajusta la condición según tu modelo real de autenticación
+-- (auth.users, claims de empresa_id, roles, etc.) antes de ir a producción.
+-- ============================================================================
+
+create extension if not exists "uuid-ossp";
+
+-- ---------------------------------------------------------------------------
+-- 1. Empresas (soporta multi-tenant: varias empresas usando el mismo ContaBot)
+-- ---------------------------------------------------------------------------
+create table if not exists empresas (
+  id uuid primary key default uuid_generate_v4(),
+  nit text not null unique,
+  razon_social text not null,
+  regimen_tributario text check (regimen_tributario in ('ordinario','simple','gran_contribuyente')),
+  aplica_exoneracion_parafiscales boolean not null default false, -- Ley 1607/2012 - Ley 2277/2022
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- 2. Empleados
+-- ---------------------------------------------------------------------------
+create table if not exists empleados (
+  id uuid primary key default uuid_generate_v4(),
+  empresa_id uuid not null references empresas(id) on delete cascade,
+  nombre text not null,
+  cedula text not null,
+  puesto text not null,
+  salario_base numeric(14,2) not null check (salario_base >= 0),
+  tipo_contrato text not null check (tipo_contrato in ('indefinido','fijo','obra_labor','aprendizaje')),
+  riesgo_arl text not null default 'I' check (riesgo_arl in ('I','II','III','IV','V')),
+  fecha_ingreso date not null,
+  fecha_retiro date,
+  activo boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (empresa_id, cedula)
+);
+
+-- ---------------------------------------------------------------------------
+-- 3. Periodos de nómina (un registro por mes a liquidar)
+-- ---------------------------------------------------------------------------
+create table if not exists periodos_nomina (
+  id uuid primary key default uuid_generate_v4(),
+  empresa_id uuid not null references empresas(id) on delete cascade,
+  mes int not null check (mes between 1 and 12),
+  anio int not null check (anio >= 2020),
+  estado text not null default 'abierto' check (estado in ('abierto','liquidado','pagado')),
+  created_at timestamptz not null default now(),
+  unique (empresa_id, mes, anio)
+);
+
+-- ---------------------------------------------------------------------------
+-- 4. Pagos no salariales por empleado/periodo
+--    (insumo para detectar el exceso del 40% de la Ley 1393 de 2010)
+-- ---------------------------------------------------------------------------
+create table if not exists conceptos_no_salariales (
+  id uuid primary key default uuid_generate_v4(),
+  empleado_id uuid not null references empleados(id) on delete cascade,
+  periodo_id uuid not null references periodos_nomina(id) on delete cascade,
+  concepto text not null, -- ej. 'bono no constitutivo de salario', 'auxilio educativo'
+  valor numeric(14,2) not null check (valor >= 0),
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- 5. Liquidaciones de nómina (resultado calculado y trazable por empleado/periodo)
+-- ---------------------------------------------------------------------------
+create table if not exists liquidaciones_nomina (
+  id uuid primary key default uuid_generate_v4(),
+  empleado_id uuid not null references empleados(id) on delete cascade,
+  periodo_id uuid not null references periodos_nomina(id) on delete cascade,
+
+  salario_base numeric(14,2) not null,
+  total_no_salarial numeric(14,2) not null default 0,
+  exceso_ley_1393 numeric(14,2) not null default 0,
+  base_aportes numeric(14,2) not null,
+  auxilio_transporte numeric(14,2) not null default 0,
+
+  aporte_salud_empleado numeric(14,2) not null,
+  aporte_pension_empleado numeric(14,2) not null,
+  aporte_salud_empleador numeric(14,2) not null,
+  aporte_pension_empleador numeric(14,2) not null,
+  aporte_arl numeric(14,2) not null,
+  sena numeric(14,2) not null default 0,
+  icbf numeric(14,2) not null default 0,
+  caja_compensacion numeric(14,2) not null default 0,
+
+  total_deducciones numeric(14,2) not null,
+  neto_a_pagar numeric(14,2) not null,
+  pago_realizado boolean not null default false,
+
+  cuenta_puc_gasto text default '510506', -- Sueldos (gasto)
+  cuenta_puc_pasivo text default '237005', -- Aportes por pagar
+
+  created_at timestamptz not null default now(),
+  unique (empleado_id, periodo_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- 6. Documentos soporte (facturas, comprobantes) y su conciliación
+-- ---------------------------------------------------------------------------
+create table if not exists documentos (
+  id uuid primary key default uuid_generate_v4(),
+  empresa_id uuid not null references empresas(id) on delete cascade,
+  tipo text not null check (tipo in ('factura_venta','factura_compra','soporte_nomina','comprobante_egreso','otro')),
+  numero_documento text,
+  fecha_emision date,
+  valor numeric(14,2),
+  cuenta_puc text, -- ej. '4135' ingresos, '5135' gastos, '2365' retefuente
+  estado_conciliacion text not null default 'pendiente' check (estado_conciliacion in ('pendiente','conciliado','rechazado')),
+  archivo_url text, -- referencia al objeto en Supabase Storage
+  texto_extraido text, -- resultado del parseo/OCR para auditoría
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- 7. Catálogo PUC de referencia (no exhaustivo, ampliar según necesidad)
+-- ---------------------------------------------------------------------------
+create table if not exists puc_cuentas (
+  codigo text primary key,
+  nombre text not null,
+  naturaleza text not null check (naturaleza in ('activo','pasivo','patrimonio','ingreso','gasto','costo'))
+);
+
+insert into puc_cuentas (codigo, nombre, naturaleza) values
+  ('510506', 'Sueldos', 'gasto'),
+  ('510527', 'Auxilio de transporte', 'gasto'),
+  ('510530', 'Auxilios (no salariales)', 'gasto'),
+  ('237005', 'Aportes a EPS (salud)', 'pasivo'),
+  ('237006', 'Aportes a fondos de pensiones', 'pasivo'),
+  ('237010', 'Aportes ICBF, SENA y Caja de Compensación', 'pasivo'),
+  ('236500', 'Retención en la fuente por pagar', 'pasivo'),
+  ('238000', 'Acreedores varios', 'pasivo'),
+  ('413500', 'Ingresos operacionales', 'ingreso'),
+  ('513500', 'Gastos diversos', 'gasto'),
+  ('111000', 'Bancos', 'activo')
+on conflict (codigo) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Row Level Security (punto de partida — ajustar al modelo de auth real)
+-- ---------------------------------------------------------------------------
+alter table empresas enable row level security;
+alter table empleados enable row level security;
+alter table periodos_nomina enable row level security;
+alter table conceptos_no_salariales enable row level security;
+alter table liquidaciones_nomina enable row level security;
+alter table documentos enable row level security;
+
+-- Ejemplo: cada usuario solo ve datos de su propia empresa (requiere que el
+-- JWT de Supabase incluya un claim "empresa_id"). Descomenta y adapta:
+--
+-- create policy "acceso_por_empresa" on empleados
+--   for all using (empresa_id = (auth.jwt() ->> 'empresa_id')::uuid);
+
+
+==============================================================================
+ARCHIVO: lib/supabase/client.ts
+==============================================================================
+// lib/supabase/client.ts
+//
+// Cliente único de Supabase para componentes 'use client'.
+// Requiere las variables de entorno NEXT_PUBLIC_SUPABASE_URL y
+// NEXT_PUBLIC_SUPABASE_ANON_KEY (ver .env.local.example).
+
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  // Falla rápido y con un mensaje claro en vez de un error críptico de fetch.
+  console.error(
+    'Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en las variables de entorno.'
+  )
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+
+==============================================================================
+ARCHIVO: lib/nomina/calculo.ts
+==============================================================================
+// lib/nomina/calculo.ts
+//
+// Motor de cálculo de nómina para ContaBot.
+//
+// Aplica, a nivel de estructura, las reglas de seguridad social colombianas:
+//   - Aportes a salud y pensión (empleado y empleador)
+//   - Ley 1393 de 2010: si los pagos no constitutivos de salario superan
+//     el 40% de la remuneración total, el EXCESO se suma a la base de
+//     aportes a seguridad social y parafiscales.
+//   - Exoneración de aportes a SENA/ICBF y salud del empleador para
+//     trabajadores que ganan menos de 10 SMMLV (Ley 1607 de 2012,
+//     ajustada por la Ley 2277 de 2022), aplicable a sociedades y
+//     personas jurídicas contribuyentes del impuesto sobre la renta.
+//
+// ⚠️ IMPORTANTE: los valores de SMMLV, auxilio de transporte y tarifas ARL
+// cambian cada año por decreto del Ministerio de Trabajo. Las constantes de
+// abajo son un punto de partida y DEBEN actualizarse con los valores
+// vigentes antes de liquidar nómina real. Este módulo no constituye
+// asesoría legal ni tributaria — valídalo con un contador o revisor fiscal.
+
+export const PARAMETROS_LEGALES = {
+  // ⚠️ Actualizar cada enero con el decreto de SMMLV vigente.
+  SMMLV: 1_423_500,
+  AUXILIO_TRANSPORTE: 200_000,
+  TOPE_AUX_TRANSPORTE_EN_SMMLV: 2, // se paga si el salario es <= 2 SMMLV
+  TOPE_EXONERACION_PARAFISCALES_EN_SMMLV: 10, // Ley 1607/2012
+} as const
+
+export const TARIFAS_APORTES = {
+  saludEmpleado: 0.04,
+  pensionEmpleado: 0.04,
+  saludEmpleador: 0.085,
+  pensionEmpleador: 0.12,
+  sena: 0.02,
+  icbf: 0.03,
+  cajaCompensacion: 0.04, // la Caja de Compensación NO se exonera
+} as const
+
+export type RiesgoARL = 'I' | 'II' | 'III' | 'IV' | 'V'
+
+// Tarifas mínimas de la tabla de clases de riesgo ARL (Decreto 1772 de 1994).
+// Cada ARL puede ajustar dentro de un rango; usar como referencia inicial.
+export const TARIFAS_ARL: Record<RiesgoARL, number> = {
+  I: 0.00522,
+  II: 0.01044,
+  III: 0.02436,
+  IV: 0.04350,
+  V: 0.06960,
+}
+
+export type EntradaLiquidacion = {
+  salarioBase: number
+  pagosNoSalariales: number // total pactado como NO constitutivo de salario en el periodo
+  riesgoARL: RiesgoARL
+  empresaExoneradaParafiscales: boolean // empresa.aplica_exoneracion_parafiscales
+}
+
+export type ResultadoLiquidacion = {
+  salarioBase: number
+  pagosNoSalariales: number
+  excesoLey1393: number
+  baseAportes: number
+  auxilioTransporte: number
+  aporteSaludEmpleado: number
+  aportePensionEmpleado: number
+  aporteSaludEmpleador: number
+  aportePensionEmpleador: number
+  aporteArl: number
+  sena: number
+  icbf: number
+  cajaCompensacion: number
+  totalDeducciones: number
+  netoAPagar: number
+}
+
+/**
+ * Ley 1393 de 2010, art. 30: si los pagos no constitutivos de salario
+ * pactados con el trabajador superan el 40% de la remuneración total
+ * (salario + esos pagos), el exceso debe incorporarse a la base de
+ * cálculo de los aportes a seguridad social y parafiscales.
+ */
+export function calcularExcesoLey1393(salarioBase: number, pagosNoSalariales: number): number {
+  if (pagosNoSalariales <= 0) return 0
+  const remuneracionTotal = salarioBase + pagosNoSalariales
+  const limitePermitido = remuneracionTotal * 0.4
+  const exceso = pagosNoSalariales - limitePermitido
+  return exceso > 0 ? Math.round(exceso) : 0
+}
+
+function calcularAuxilioTransporte(salarioBase: number): number {
+  const tope = PARAMETROS_LEGALES.SMMLV * PARAMETROS_LEGALES.TOPE_AUX_TRANSPORTE_EN_SMMLV
+  return salarioBase <= tope ? PARAMETROS_LEGALES.AUXILIO_TRANSPORTE : 0
+}
+
+/**
+ * Determina si el empleado, por su nivel salarial, habilita la exoneración
+ * de parafiscales de la empresa (Ley 1607/2012): aplica solo si gana menos
+ * de 10 SMMLV y la empresa cumple las condiciones (persona jurídica,
+ * contribuyente de renta). El flag de empresa se recibe ya resuelto desde
+ * la tabla `empresas.aplica_exoneracion_parafiscales`.
+ */
+function empleadoHabilitaExoneracion(salarioBase: number, empresaExonerada: boolean): boolean {
+  if (!empresaExonerada) return false
+  const tope = PARAMETROS_LEGALES.SMMLV * PARAMETROS_LEGALES.TOPE_EXONERACION_PARAFISCALES_EN_SMMLV
+  return salarioBase < tope
+}
+
+export function liquidarNomina(entrada: EntradaLiquidacion): ResultadoLiquidacion {
+  const { salarioBase, pagosNoSalariales, riesgoARL, empresaExoneradaParafiscales } = entrada
+
+  const excesoLey1393 = calcularExcesoLey1393(salarioBase, pagosNoSalariales)
+  const baseAportes = salarioBase + excesoLey1393
+  const auxilioTransporte = calcularAuxilioTransporte(salarioBase)
+  const exonerado = empleadoHabilitaExoneracion(salarioBase, empresaExoneradaParafiscales)
+
+  const aporteSaludEmpleado = round2(baseAportes * TARIFAS_APORTES.saludEmpleado)
+  const aportePensionEmpleado = round2(baseAportes * TARIFAS_APORTES.pensionEmpleado)
+
+  const aporteSaludEmpleador = exonerado ? 0 : round2(baseAportes * TARIFAS_APORTES.saludEmpleador)
+  const aportePensionEmpleador = round2(baseAportes * TARIFAS_APORTES.pensionEmpleador)
+  const aporteArl = round2(baseAportes * TARIFAS_ARL[riesgoARL])
+
+  const sena = exonerado ? 0 : round2(baseAportes * TARIFAS_APORTES.sena)
+  const icbf = exonerado ? 0 : round2(baseAportes * TARIFAS_APORTES.icbf)
+  const cajaCompensacion = round2(baseAportes * TARIFAS_APORTES.cajaCompensacion)
+
+  const totalDeducciones = aporteSaludEmpleado + aportePensionEmpleado
+  const netoAPagar = round2(salarioBase + pagosNoSalariales + auxilioTransporte - totalDeducciones)
+
+  return {
+    salarioBase,
+    pagosNoSalariales,
+    excesoLey1393,
+    baseAportes,
+    auxilioTransporte,
+    aporteSaludEmpleado,
+    aportePensionEmpleado,
+    aporteSaludEmpleador,
+    aportePensionEmpleador,
+    aporteArl,
+    sena,
+    icbf,
+    cajaCompensacion,
+    totalDeducciones,
+    netoAPagar,
+  }
+}
+
+function round2(valor: number): number {
+  return Math.round(valor * 100) / 100
+}
+
+
+==============================================================================
+ARCHIVO: app/nomina/page.tsx
+==============================================================================
+'use client'
+// app/nomina/page.tsx
+//
+// Versión conectada a Supabase. Reemplaza el array local "empleadosIniciales"
+// del borrador anterior por las tablas `empleados`, `periodos_nomina` y
+// `liquidaciones_nomina`. La liquidación usa lib/nomina/calculo.ts, que aplica
+// la Ley 1393 de 2010 (40% de pagos no salariales) y los aportes a salud,
+// pensión, ARL y parafiscales.
+//
+// Pendiente para la siguiente fase (no incluido aquí todavía):
+//   - Selector de empresa cuando haya más de una (hoy se toma la primera).
+//   - Importación masiva de empleados/novedades desde Excel.
+//   - Generación del comprobante contable (asiento PUC) por periodo.
+
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useUser } from '@/lib/hooks/useUser'
+import Sidebar from '@/components/Sidebar'
+import { supabase } from '@/lib/supabase/client'
+import { liquidarNomina, type RiesgoARL } from '@/lib/nomina/calculo'
+
+type Empleado = {
+  id: string
+  empresa_id: string
+  nombre: string
+  puesto: string
+  salario_base: number
+  riesgo_arl: RiesgoARL
+  activo: boolean
+}
+
+type LiquidacionVista = {
+  empleado_id: string
+  neto_a_pagar: number
+  pago_realizado: boolean
+}
+
+export default function NominaPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>}>
+      <NominaContenido />
+    </Suspense>
+  )
+}
+
+function NominaContenido() {
+  const { user, handleLogout } = useUser()
+
+  const [empresaId, setEmpresaId] = useState<string | null>(null)
+  const [empleados, setEmpleados] = useState<Empleado[]>([])
+  const [liquidaciones, setLiquidaciones] = useState<LiquidacionVista[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [liquidando, setLiquidando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const [nombre, setNombre] = useState('')
+  const [puesto, setPuesto] = useState('')
+  const [salario, setSalario] = useState('')
+  const [riesgo, setRiesgo] = useState<RiesgoARL>('I')
+
+  // Carga inicial: empresa, empleados y liquidaciones del periodo actual.
+  useEffect(() => {
+    cargarDatos()
+  }, [])
+
+  async function cargarDatos() {
+    setCargando(true)
+    setError(null)
+
+    const { data: empresa, error: errEmpresa } = await supabase
+      .from('empresas')
+      .select('id')
+      .limit(1)
+      .single()
+
+    if (errEmpresa || !empresa) {
+      setError('No se encontró ninguna empresa registrada en Supabase. Crea una fila en la tabla "empresas" para continuar.')
+      setCargando(false)
+      return
+    }
+
+    setEmpresaId(empresa.id)
+
+    const { data: empleadosData, error: errEmpleados } = await supabase
+      .from('empleados')
+      .select('id, empresa_id, nombre, puesto, salario_base, riesgo_arl, activo')
+      .eq('empresa_id', empresa.id)
+      .order('nombre')
+
+    if (errEmpleados) {
+      setError(`Error cargando empleados: ${errEmpleados.message}`)
+    } else {
+      setEmpleados(empleadosData ?? [])
+    }
+
+    setCargando(false)
+  }
+
+  const totalNomina = useMemo(
+    () => empleados.reduce((sum, e) => sum + e.salario_base, 0),
+    [empleados]
+  )
+
+  const totalPendiente = useMemo(() => {
+    const idsPagados = new Set(
+      liquidaciones.filter((l) => l.pago_realizado).map((l) => l.empleado_id)
+    )
+    return empleados
+      .filter((e) => !idsPagados.has(e.id))
+      .reduce((sum, e) => sum + e.salario_base, 0)
+  }, [empleados, liquidaciones])
+
+  async function agregarEmpleado() {
+    if (!empresaId || !nombre.trim() || !puesto.trim() || !salario.trim()) return
+
+    const { data, error: errInsert } = await supabase
+      .from('empleados')
+      .insert({
+        empresa_id: empresaId,
+        nombre: nombre.trim(),
+        puesto: puesto.trim(),
+        salario_base: Number(salario),
+        riesgo_arl: riesgo,
+        tipo_contrato: 'indefinido',
+        cedula: `pendiente-${Date.now()}`, // ⚠️ reemplazar por captura real de cédula
+        fecha_ingreso: new Date().toISOString().slice(0, 10),
+        activo: true,
+      })
+      .select()
+      .single()
+
+    if (errInsert) {
+      setError(`No se pudo guardar el empleado: ${errInsert.message}`)
+      return
+    }
+
+    setEmpleados((prev) => [...prev, data as Empleado])
+    setNombre('')
+    setPuesto('')
+    setSalario('')
+    setRiesgo('I')
+  }
+
+  /**
+   * Liquida la nómina del mes actual para todos los empleados activos:
+   * crea (o reutiliza) el periodo y calcula cada liquidación con las
+   * reglas de lib/nomina/calculo.ts.
+   */
+  async function liquidarMesActual() {
+    if (!empresaId) return
+    setLiquidando(true)
+    setError(null)
+
+    const hoy = new Date()
+    const mes = hoy.getMonth() + 1
+    const anio = hoy.getFullYear()
+
+    const { data: periodo, error: errPeriodo } = await supabase
+      .from('periodos_nomina')
+      .upsert(
+        { empresa_id: empresaId, mes, anio, estado: 'liquidado' },
+        { onConflict: 'empresa_id,mes,anio' }
+      )
+      .select()
+      .single()
+
+    if (errPeriodo || !periodo) {
+      setError(`No se pudo crear el periodo: ${errPeriodo?.message ?? 'desconocido'}`)
+      setLiquidando(false)
+      return
+    }
+
+    const filas = empleados
+      .filter((e) => e.activo)
+      .map((e) => {
+        const resultado = liquidarNomina({
+          salarioBase: e.salario_base,
+          pagosNoSalariales: 0, // ⚠️ conectar con conceptos_no_salariales cuando exista captura de novedades
+          riesgoARL: e.riesgo_arl,
+          empresaExoneradaParafiscales: false, // ⚠️ leer de empresas.aplica_exoneracion_parafiscales
+        })
+
+        return {
+          empleado_id: e.id,
+          periodo_id: periodo.id,
+          salario_base: resultado.salarioBase,
+          total_no_salarial: resultado.pagosNoSalariales,
+          exceso_ley_1393: resultado.excesoLey1393,
+          base_aportes: resultado.baseAportes,
+          auxilio_transporte: resultado.auxilioTransporte,
+          aporte_salud_empleado: resultado.aporteSaludEmpleado,
+          aporte_pension_empleado: resultado.aportePensionEmpleado,
+          aporte_salud_empleador: resultado.aporteSaludEmpleador,
+          aporte_pension_empleador: resultado.aportePensionEmpleador,
+          aporte_arl: resultado.aporteArl,
+          sena: resultado.sena,
+          icbf: resultado.icbf,
+          caja_compensacion: resultado.cajaCompensacion,
+          total_deducciones: resultado.totalDeducciones,
+          neto_a_pagar: resultado.netoAPagar,
+        }
+      })
+
+    const { data: liquidacionesData, error: errLiquidar } = await supabase
+      .from('liquidaciones_nomina')
+      .upsert(filas, { onConflict: 'empleado_id,periodo_id' })
+      .select('empleado_id, neto_a_pagar, pago_realizado')
+
+    if (errLiquidar) {
+      setError(`Error liquidando nómina: ${errLiquidar.message}`)
+    } else {
+      setLiquidaciones(liquidacionesData ?? [])
+    }
+
+    setLiquidando(false)
+  }
+
+  async function togglePago(empleadoId: string) {
+    const liquidacion = liquidaciones.find((l) => l.empleado_id === empleadoId)
+    if (!liquidacion) return
+
+    const { error: errUpdate } = await supabase
+      .from('liquidaciones_nomina')
+      .update({ pago_realizado: !liquidacion.pago_realizado })
+      .eq('empleado_id', empleadoId)
+
+    if (errUpdate) {
+      setError(`No se pudo actualizar el pago: ${errUpdate.message}`)
+      return
+    }
+
+    setLiquidaciones((prev) =>
+      prev.map((l) =>
+        l.empleado_id === empleadoId ? { ...l, pago_realizado: !l.pago_realizado } : l
+      )
+    )
+  }
+
+  if (!user) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <p className="text-white">Cargando...</p>
+    </div>
+  )
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar user={user} onLogout={handleLogout} />
+      <main className="flex-1 ml-64 p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <section className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Gestión de Nómina</p>
+                <h1 className="text-3xl font-semibold text-slate-900">Nómina de empleados</h1>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+                <div className="rounded-3xl bg-emerald-50 p-5">
+                  <p className="text-sm text-slate-500">Total nómina</p>
+                  <p className="text-2xl font-bold text-emerald-700">${totalNomina.toLocaleString()}</p>
+                </div>
+                <div className="rounded-3xl bg-yellow-50 p-5">
+                  <p className="text-sm text-slate-500">Pago pendiente</p>
+                  <p className="text-2xl font-bold text-yellow-700">${totalPendiente.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={liquidarMesActual}
+              disabled={liquidando || !empresaId}
+              className="mt-6 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"
+            >
+              {liquidando ? 'Liquidando...' : 'Liquidar nómina del mes actual'}
+            </button>
+            {error && (
+              <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+            )}
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+              <h2 className="text-xl font-semibold text-slate-900 mb-6">Empleados registrados</h2>
+              {cargando ? (
+                <p className="text-slate-500">Cargando empleados...</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Nombre</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Puesto</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Salario</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {empleados.map((empleado) => {
+                        const liquidacion = liquidaciones.find((l) => l.empleado_id === empleado.id)
+                        const pagado = liquidacion?.pago_realizado ?? false
+                        return (
+                          <tr key={empleado.id}>
+                            <td className="px-4 py-4 text-slate-700">{empleado.nombre}</td>
+                            <td className="px-4 py-4 text-slate-700">{empleado.puesto}</td>
+                            <td className="px-4 py-4 text-right text-slate-900 font-semibold">
+                              ${empleado.salario_base.toLocaleString()}
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span
+                                className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${
+                                  pagado ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                }`}
+                              >
+                                {pagado ? 'Pagado' : liquidacion ? 'Pendiente' : 'Sin liquidar'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <button
+                                onClick={() => togglePago(empleado.id)}
+                                disabled={!liquidacion}
+                                className="rounded-2xl bg-slate-800 px-4 py-2 text-sm text-white transition hover:bg-slate-700 disabled:opacity-40"
+                              >
+                                {pagado ? 'Marcar pendiente' : 'Marcar pagado'}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <aside className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+              <h2 className="text-xl font-semibold text-slate-900 mb-5">Agregar nuevo empleado</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Nombre</label>
+                  <input
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    placeholder="Ej. Laura Torres"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Puesto</label>
+                  <input
+                    value={puesto}
+                    onChange={(e) => setPuesto(e.target.value)}
+                    placeholder="Ej. Auxiliar contable"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Salario mensual</label>
+                  <input
+                    value={salario}
+                    onChange={(e) => setSalario(e.target.value)}
+                    placeholder="Ej. 2500000"
+                    type="number"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Riesgo ARL</label>
+                  <select
+                    value={riesgo}
+                    onChange={(e) => setRiesgo(e.target.value as RiesgoARL)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {(['I', 'II', 'III', 'IV', 'V'] as RiesgoARL[]).map((r) => (
+                      <option key={r} value={r}>Clase {r}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={agregarEmpleado}
+                  className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-white font-semibold transition hover:bg-emerald-700"
+                >
+                  Añadir empleado
+                </button>
+
+                <div className="rounded-3xl bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Resumen rápido</p>
+                  <p className="mt-3 text-2xl font-semibold text-slate-900">${totalNomina.toLocaleString()}</p>
+                  <p className="text-sm text-slate-500">Total de nómina</p>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+
+==============================================================================
+ARCHIVO: app/dashboard/page.tsx
+==============================================================================
+'use client'
+// app/dashboard/page.tsx
+//
+// Vista general de ContaBot: cruza datos de nómina y documentos para que el
+// auxiliar contable vea en un solo lugar qué necesita atención hoy, en vez
+// de revisar módulo por módulo.
+//
+// ⚠️ El calendario tributario de la sección "Vencimientos" es un ejemplo de
+// estructura, no las fechas reales vigentes (estas dependen del año y del
+// último dígito del NIT). Antes de mostrarlo a un usuario final, reemplázalo
+// por datos cargados desde una tabla `vencimientos_dian` o desde el
+// calendario tributario oficial publicado por la DIAN para el año en curso.
+
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useUser } from '@/lib/hooks/useUser'
+import Sidebar from '@/components/Sidebar'
+import { supabase } from '@/lib/supabase/client'
+
+type ResumenNomina = {
+  totalLiquidado: number
+  totalPendientePago: number
+  empleadosActivos: number
+}
+
+type ResumenDocumentos = {
+  pendientesConciliar: number
+  conciliados: number
+  valorPendiente: number
+}
+
+type Vencimiento = {
+  id: string
+  obligacion: string
+  fecha: string
+  estado: 'proximo' | 'vencido' | 'cumplido'
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>}>
+      <DashboardContenido />
+    </Suspense>
+  )
+}
+
+function DashboardContenido() {
+  const { user, handleLogout } = useUser()
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [resumenNomina, setResumenNomina] = useState<ResumenNomina>({
+    totalLiquidado: 0,
+    totalPendientePago: 0,
+    empleadosActivos: 0,
+  })
+  const [resumenDocumentos, setResumenDocumentos] = useState<ResumenDocumentos>({
+    pendientesConciliar: 0,
+    conciliados: 0,
+    valorPendiente: 0,
+  })
+
+  // Ejemplo de estructura — sustituir por una tabla `vencimientos_dian` real.
+  const vencimientos: Vencimiento[] = useMemo(
+    () => [
+      { id: '1', obligacion: 'Retención en la fuente (mensual)', fecha: 'Según último dígito del NIT', estado: 'proximo' },
+      { id: '2', obligacion: 'IVA (bimestral o cuatrimestral según responsable)', fecha: 'Calendario DIAN vigente', estado: 'proximo' },
+      { id: '3', obligacion: 'Aportes a seguridad social (planilla PILA)', fecha: 'Mismo plazo de la retención', estado: 'proximo' },
+    ],
+    []
+  )
+
+  useEffect(() => {
+    cargarResumen()
+  }, [])
+
+  async function cargarResumen() {
+    setCargando(true)
+    setError(null)
+
+    const { data: empresa, error: errEmpresa } = await supabase
+      .from('empresas')
+      .select('id')
+      .limit(1)
+      .single()
+
+    if (errEmpresa || !empresa) {
+      setError('No se encontró ninguna empresa registrada en Supabase.')
+      setCargando(false)
+      return
+    }
+
+    const [{ data: empleados }, { data: liquidaciones }, { data: documentos }] = await Promise.all([
+      supabase.from('empleados').select('id').eq('empresa_id', empresa.id).eq('activo', true),
+      supabase
+        .from('liquidaciones_nomina')
+        .select('neto_a_pagar, pago_realizado, empleado_id, empleados!inner(empresa_id)')
+        .eq('empleados.empresa_id', empresa.id),
+      supabase.from('documentos').select('estado_conciliacion, valor').eq('empresa_id', empresa.id),
+    ])
+
+    const totalLiquidado = (liquidaciones ?? []).reduce((sum, l: any) => sum + Number(l.neto_a_pagar ?? 0), 0)
+    const totalPendientePago = (liquidaciones ?? [])
+      .filter((l: any) => !l.pago_realizado)
+      .reduce((sum, l: any) => sum + Number(l.neto_a_pagar ?? 0), 0)
+
+    setResumenNomina({
+      totalLiquidado,
+      totalPendientePago,
+      empleadosActivos: (empleados ?? []).length,
+    })
+
+    const pendientesConciliar = (documentos ?? []).filter((d) => d.estado_conciliacion === 'pendiente')
+    const conciliados = (documentos ?? []).filter((d) => d.estado_conciliacion === 'conciliado')
+
+    setResumenDocumentos({
+      pendientesConciliar: pendientesConciliar.length,
+      conciliados: conciliados.length,
+      valorPendiente: pendientesConciliar.reduce((sum, d) => sum + Number(d.valor ?? 0), 0),
+    })
+
+    setCargando(false)
+  }
+
+  if (!user) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <p className="text-white">Cargando...</p>
+    </div>
+  )
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar user={user} onLogout={handleLogout} />
+      <main className="flex-1 ml-64 p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <section className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+            <p className="text-sm text-slate-500">ContaBot</p>
+            <h1 className="text-3xl font-semibold text-slate-900">Resumen general</h1>
+            {error && (
+              <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+            )}
+          </section>
+
+          {cargando ? (
+            <p className="text-slate-500">Cargando resumen...</p>
+          ) : (
+            <>
+              <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+                <Tarjeta titulo="Empleados activos" valor={resumenNomina.empleadosActivos.toString()} color="slate" />
+                <Tarjeta titulo="Nómina liquidada (acumulado)" valor={`$${resumenNomina.totalLiquidado.toLocaleString()}`} color="emerald" />
+                <Tarjeta titulo="Nómina pendiente de pago" valor={`$${resumenNomina.totalPendientePago.toLocaleString()}`} color="yellow" />
+                <Tarjeta titulo="Documentos sin conciliar" valor={resumenDocumentos.pendientesConciliar.toString()} color="red" />
+              </section>
+
+              <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+                  <h2 className="text-xl font-semibold text-slate-900 mb-5">Conciliación de documentos</h2>
+                  <div className="space-y-3">
+                    <FilaResumen etiqueta="Conciliados" valor={resumenDocumentos.conciliados.toString()} />
+                    <FilaResumen etiqueta="Pendientes" valor={resumenDocumentos.pendientesConciliar.toString()} />
+                    <FilaResumen etiqueta="Valor pendiente" valor={`$${resumenDocumentos.valorPendiente.toLocaleString()}`} />
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+                  <h2 className="text-xl font-semibold text-slate-900 mb-5">Vencimientos próximos</h2>
+                  <div className="space-y-3">
+                    {vencimientos.map((v) => (
+                      <div key={v.id} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{v.obligacion}</p>
+                          <p className="text-xs text-slate-500">{v.fecha}</p>
+                        </div>
+                        <EstadoBadge estado={v.estado} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function Tarjeta({ titulo, valor, color }: { titulo: string; valor: string; color: 'slate' | 'emerald' | 'yellow' | 'red' }) {
+  const estilos: Record<string, string> = {
+    slate: 'bg-slate-50 text-slate-700',
+    emerald: 'bg-emerald-50 text-emerald-700',
+    yellow: 'bg-yellow-50 text-yellow-700',
+    red: 'bg-red-50 text-red-700',
+  }
+  return (
+    <div className={`rounded-3xl p-5 ${estilos[color]}`}>
+      <p className="text-sm text-slate-500">{titulo}</p>
+      <p className="mt-1 text-2xl font-bold">{valor}</p>
+    </div>
+  )
+}
+
+function FilaResumen({ etiqueta, valor }: { etiqueta: string; valor: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+      <span className="text-sm text-slate-600">{etiqueta}</span>
+      <span className="text-sm font-semibold text-slate-900">{valor}</span>
+    </div>
+  )
+}
+
+function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
+  const estilos: Record<Vencimiento['estado'], string> = {
+    proximo: 'bg-yellow-100 text-yellow-700',
+    vencido: 'bg-red-100 text-red-700',
+    cumplido: 'bg-emerald-100 text-emerald-700',
+  }
+  const texto: Record<Vencimiento['estado'], string> = {
+    proximo: 'Próximo',
+    vencido: 'Vencido',
+    cumplido: 'Cumplido',
+  }
+  return (
+    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${estilos[estado]}`}>
+      {texto[estado]}
+    </span>
+  )
+}
+
+
+==============================================================================
+ARCHIVO: app/documentos/page.tsx
+==============================================================================
+'use client'
+// app/documentos/page.tsx
+//
+// Registro y conciliación de documentos soporte (facturas, comprobantes).
+// Esta versión permite registrar el documento y su metadato contable
+// (tipo, valor, cuenta PUC) manualmente. La carga del archivo físico a
+// Supabase Storage y la extracción automática por OCR quedan marcadas
+// como siguiente paso (ver comentarios "TODO") para no fingir una
+// integración que aún no existe.
+
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useUser } from '@/lib/hooks/useUser'
+import Sidebar from '@/components/Sidebar'
+import { supabase } from '@/lib/supabase/client'
+
+type TipoDocumento = 'factura_venta' | 'factura_compra' | 'soporte_nomina' | 'comprobante_egreso' | 'otro'
+type EstadoConciliacion = 'pendiente' | 'conciliado' | 'rechazado'
+
+type Documento = {
+  id: string
+  tipo: TipoDocumento
+  numero_documento: string | null
+  fecha_emision: string | null
+  valor: number | null
+  cuenta_puc: string | null
+  estado_conciliacion: EstadoConciliacion
+}
+
+const ETIQUETAS_TIPO: Record<TipoDocumento, string> = {
+  factura_venta: 'Factura de venta',
+  factura_compra: 'Factura de compra',
+  soporte_nomina: 'Soporte de nómina',
+  comprobante_egreso: 'Comprobante de egreso',
+  otro: 'Otro',
+}
+
+export default function DocumentosPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>}>
+      <DocumentosContenido />
+    </Suspense>
+  )
+}
+
+function DocumentosContenido() {
+  const { user, handleLogout } = useUser()
+
+  const [empresaId, setEmpresaId] = useState<string | null>(null)
+  const [documentos, setDocumentos] = useState<Documento[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [filtroEstado, setFiltroEstado] = useState<EstadoConciliacion | 'todos'>('todos')
+
+  const [tipo, setTipo] = useState<TipoDocumento>('factura_compra')
+  const [numero, setNumero] = useState('')
+  const [fecha, setFecha] = useState('')
+  const [valor, setValor] = useState('')
+  const [cuentaPuc, setCuentaPuc] = useState('')
+
+  useEffect(() => {
+    cargarDocumentos()
+  }, [])
+
+  async function cargarDocumentos() {
+    setCargando(true)
+    setError(null)
+
+    const { data: empresa, error: errEmpresa } = await supabase
+      .from('empresas')
+      .select('id')
+      .limit(1)
+      .single()
+
+    if (errEmpresa || !empresa) {
+      setError('No se encontró ninguna empresa registrada en Supabase.')
+      setCargando(false)
+      return
+    }
+
+    setEmpresaId(empresa.id)
+
+    const { data, error: errDocs } = await supabase
+      .from('documentos')
+      .select('id, tipo, numero_documento, fecha_emision, valor, cuenta_puc, estado_conciliacion')
+      .eq('empresa_id', empresa.id)
+      .order('fecha_emision', { ascending: false })
+
+    if (errDocs) {
+      setError(`Error cargando documentos: ${errDocs.message}`)
+    } else {
+      setDocumentos(data ?? [])
+    }
+
+    setCargando(false)
+  }
+
+  const documentosFiltrados = useMemo(() => {
+    if (filtroEstado === 'todos') return documentos
+    return documentos.filter((d) => d.estado_conciliacion === filtroEstado)
+  }, [documentos, filtroEstado])
+
+  const totales = useMemo(() => {
+    const pendientes = documentos.filter((d) => d.estado_conciliacion === 'pendiente')
+    const conciliados = documentos.filter((d) => d.estado_conciliacion === 'conciliado')
+    return {
+      pendientes: pendientes.length,
+      conciliados: conciliados.length,
+      valorPendiente: pendientes.reduce((sum, d) => sum + Number(d.valor ?? 0), 0),
+    }
+  }, [documentos])
+
+  async function registrarDocumento() {
+    if (!empresaId || !numero.trim() || !valor.trim()) return
+
+    // TODO: aquí se debe subir el archivo real a Supabase Storage y guardar
+    // su URL en `archivo_url`, y opcionalmente enviarlo a un servicio de
+    // OCR/parseo para llenar `texto_extraido` automáticamente.
+    const { data, error: errInsert } = await supabase
+      .from('documentos')
+      .insert({
+        empresa_id: empresaId,
+        tipo,
+        numero_documento: numero.trim(),
+        fecha_emision: fecha || null,
+        valor: Number(valor),
+        cuenta_puc: cuentaPuc.trim() || null,
+        estado_conciliacion: 'pendiente',
+      })
+      .select()
+      .single()
+
+    if (errInsert) {
+      setError(`No se pudo registrar el documento: ${errInsert.message}`)
+      return
+    }
+
+    setDocumentos((prev) => [data as Documento, ...prev])
+    setNumero('')
+    setFecha('')
+    setValor('')
+    setCuentaPuc('')
+  }
+
+  async function cambiarEstado(id: string, nuevoEstado: EstadoConciliacion) {
+    const { error: errUpdate } = await supabase
+      .from('documentos')
+      .update({ estado_conciliacion: nuevoEstado })
+      .eq('id', id)
+
+    if (errUpdate) {
+      setError(`No se pudo actualizar el estado: ${errUpdate.message}`)
+      return
+    }
+
+    setDocumentos((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, estado_conciliacion: nuevoEstado } : d))
+    )
+  }
+
+  if (!user) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <p className="text-white">Cargando...</p>
+    </div>
+  )
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar user={user} onLogout={handleLogout} />
+      <main className="flex-1 ml-64 p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <section className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Conciliación contable</p>
+                <h1 className="text-3xl font-semibold text-slate-900">Documentos soporte</h1>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-3xl bg-yellow-50 p-5">
+                  <p className="text-sm text-slate-500">Pendientes</p>
+                  <p className="text-2xl font-bold text-yellow-700">{totales.pendientes}</p>
+                </div>
+                <div className="rounded-3xl bg-emerald-50 p-5">
+                  <p className="text-sm text-slate-500">Conciliados</p>
+                  <p className="text-2xl font-bold text-emerald-700">{totales.conciliados}</p>
+                </div>
+                <div className="rounded-3xl bg-red-50 p-5">
+                  <p className="text-sm text-slate-500">Valor pendiente</p>
+                  <p className="text-2xl font-bold text-red-700">${totales.valorPendiente.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            {error && (
+              <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+            )}
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-slate-900">Documentos registrados</h2>
+                <select
+                  value={filtroEstado}
+                  onChange={(e) => setFiltroEstado(e.target.value as EstadoConciliacion | 'todos')}
+                  className="rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                >
+                  <option value="todos">Todos</option>
+                  <option value="pendiente">Pendientes</option>
+                  <option value="conciliado">Conciliados</option>
+                  <option value="rechazado">Rechazados</option>
+                </select>
+              </div>
+
+              {cargando ? (
+                <p className="text-slate-500">Cargando documentos...</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">N° documento</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Valor</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Cuenta PUC</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {documentosFiltrados.map((doc) => (
+                        <tr key={doc.id}>
+                          <td className="px-4 py-4 text-slate-700">{ETIQUETAS_TIPO[doc.tipo]}</td>
+                          <td className="px-4 py-4 text-slate-700">{doc.numero_documento ?? '—'}</td>
+                          <td className="px-4 py-4 text-right text-slate-900 font-semibold">
+                            ${Number(doc.valor ?? 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-4 text-center text-slate-700">{doc.cuenta_puc ?? '—'}</td>
+                          <td className="px-4 py-4 text-center">
+                            <span
+                              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                                doc.estado_conciliacion === 'conciliado'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : doc.estado_conciliacion === 'rechazado'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}
+                            >
+                              {doc.estado_conciliacion}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            {doc.estado_conciliacion !== 'conciliado' && (
+                              <button
+                                onClick={() => cambiarEstado(doc.id, 'conciliado')}
+                                className="rounded-2xl bg-slate-800 px-3 py-2 text-xs text-white transition hover:bg-slate-700"
+                              >
+                                Conciliar
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <aside className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
+              <h2 className="text-xl font-semibold text-slate-900 mb-5">Registrar documento</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Tipo</label>
+                  <select
+                    value={tipo}
+                    onChange={(e) => setTipo(e.target.value as TipoDocumento)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {Object.entries(ETIQUETAS_TIPO).map(([valorTipo, etiqueta]) => (
+                      <option key={valorTipo} value={valorTipo}>{etiqueta}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Número de documento</label>
+                  <input
+                    value={numero}
+                    onChange={(e) => setNumero(e.target.value)}
+                    placeholder="Ej. FV-1024"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Fecha de emisión</label>
+                  <input
+                    type="date"
+                    value={fecha}
+                    onChange={(e) => setFecha(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Valor</label>
+                  <input
+                    type="number"
+                    value={valor}
+                    onChange={(e) => setValor(e.target.value)}
+                    placeholder="Ej. 850000"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Cuenta PUC</label>
+                  <input
+                    value={cuentaPuc}
+                    onChange={(e) => setCuentaPuc(e.target.value)}
+                    placeholder="Ej. 513500"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <button
+                  onClick={registrarDocumento}
+                  className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-white font-semibold transition hover:bg-emerald-700"
+                >
+                  Registrar documento
+                </button>
+              </div>
+            </aside>
+          </section>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+
