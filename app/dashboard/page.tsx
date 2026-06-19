@@ -99,16 +99,19 @@ function DashboardContenido() {
       valorPendiente: pendientesConciliar.reduce((sum, d) => sum + Number(d.valor ?? 0), 0),
     })
 
-    setCargando(false)
-  }
-
-  const cargarFacturas = async (userId: string) => {
-    const { data } = await supabase
+  async function cargarFacturas(userId: string) {
+    const { data, error } = await supabase
       .from('facturas')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-    if (data) setFacturas(data)
+    if (!error) {
+      setFacturas(data ?? [])
+    }
+  }
+
+
+    setCargando(false)
   }
 
   const handleEliminar = async (id: string) => {
@@ -209,20 +212,12 @@ if (duplicado) {
     diferencia,
     fecha_pago: nominaForm.fecha_pago,
     notas: nominaForm.notas,
-  })
-  if (error) {
-    setMensajeNomina('Error: ' + error.message)
-  } else {
-    setMensajeNomina('Pago de nomina guardado correctamente')
-    setNominaForm({ nombre_empleado: '', sueldo_pagado: '', ibc_pila: '', fecha_pago: '', notas: '' })
-    cargarNominas(user.id)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (!error) {
+    setFacturas(data ?? [])
   }
-  setGuardandoNomina(false)
 }
-  const handleRegistrarPago = async () => {
-    if (!pagoModal) return
-    await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
-    setPagoModal(null)
     cargarFacturas(user.id)
   }
 
@@ -552,4 +547,3 @@ function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
     </span>
   )
 }
-
