@@ -103,7 +103,7 @@ function DashboardContenido() {
     setCargando(false)
   }
 
-  async function cargarFacturas(userId: string) {
+    async function cargarFacturas(userId: string) {
   const { data, error } = await supabase
     .from('facturas')
     .select('*')
@@ -557,6 +557,7 @@ function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
   )
 }
  
+
 
 
 
