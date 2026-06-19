@@ -1,5 +1,4 @@
-﻿// ContaBot Dashboard v2
-'use client'
+﻿'use client'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useUser } from '@/lib/hooks/useUser'
 import Sidebar from '@/components/Sidebar'
@@ -103,14 +102,13 @@ function DashboardContenido() {
     setCargando(false)
   }
 
-    async function cargarFacturas(userId: string) {
-  const { data, error } = await supabase
-    .from('facturas')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-  if (!error) {
-    setFacturas(data ?? [])
+  const cargarFacturas = async (userId: string) => {
+    const { data } = await supabase
+      .from('facturas')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+    if (data) setFacturas(data)
   }
 
   const handleEliminar = async (id: string) => {
@@ -225,8 +223,6 @@ if (duplicado) {
     if (!pagoModal) return
     await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
     setPagoModal(null)
-
-}
     cargarFacturas(user.id)
   }
 
@@ -556,8 +552,4 @@ function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
     </span>
   )
 }
- 
-
-
-
 
