@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer()
     const base64 = Buffer.from(bytes).toString('base64')
     const mediaType = file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-
+    const contentBlock = { type: 'image' as const, source: { type: 'base64' as const, media_type: mediaType, data: base64 } }
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 1024,
