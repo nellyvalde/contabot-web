@@ -1,109 +1,97 @@
-﻿'use client'
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { useUser } from '@/lib/hooks/useUser'
-import Sidebar from '@/components/Sidebar'
-import { supabase } from '@/lib/supabase/client'
+'use client'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
-type ResumenNomina = {
-  totalLiquidado: number
-  totalPendientePago: number
-  empleadosActivos: number
+const categoriaConfig: Record<string, { color: string }> = {
+  'Factura de Venta':     { color: 'bg-green-100 text-green-700' },
+  'Factura de Compra':    { color: 'bg-blue-100 text-blue-700' },
+  'Gasto':                { color: 'bg-orange-100 text-orange-700' },
+  'Nomina':               { color: 'bg-blue-100 text-blue-700' },
+  'Extracto Bancario':    { color: 'bg-purple-100 text-purple-700' },
+  'Documento Tributario': { color: 'bg-orange-100 text-orange-700' },
 }
 
-type ResumenDocumentos = {
-  pendientesConciliar: number
-  conciliados: number
-  valorPendiente: number
+const estadoConfig: Record<string, { color: string }> = {
+  'Pendiente': { color: 'bg-yellow-100 text-yellow-700' },
+  'Pagado':    { color: 'bg-green-100 text-green-700' },
+  'Vencido':   { color: 'bg-red-100 text-red-700' },
 }
 
-type Vencimiento = {
-  id: string
-  obligacion: string
-  fecha: string
-  estado: 'proximo' | 'vencido' | 'cumplido'
+const menuItems = [
+  { id: 'dashboard',     icon: '📊', label: 'Dashboard' },
+  { id: 'documentos',    icon: '📄', label: 'Documentos' },
+  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar' },
+  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar' },
+  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas' },
+  { id: 'revision',      icon: '🤖', label: 'Revision IA' },
+  { id: 'clientes',      icon: '👥', label: 'Clientes' },
+  { id: 'proveedores',   icon: '🏭', label: 'Proveedores' },
+  { id: 'reportes',      icon: '📈', label: 'Reportes' },
+  { id: 'configuracion', icon: '⚙️', label: 'Configuracion' },
+]
+
+function diasDesde(fecha: string | null) {
+  if (!fecha) return 0
+  const hoy = new Date()
+  const f = new Date(fecha)
+  return Math.floor((hoy.getTime() - f.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-export default function DashboardPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>}>
-      <DashboardContenido />
-    </Suspense>
-  )
+function diasVencidos(fechaVencimiento: string | null, estado: string) {
+  if (!fechaVencimiento || estado === 'Pagado') return 0
+  const hoy = new Date()
+  const vence = new Date(fechaVencimiento)
+  const diff = Math.floor((hoy.getTime() - vence.getTime()) / (1000 * 60 * 60 * 24))
+  return diff > 0 ? diff : 0
 }
 
-function DashboardContenido() {
-  const { user, handleLogout } = useUser()
-  const [cargando, setCargando] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [resumenNomina, setResumenNomina] = useState<ResumenNomina>({
-    totalLiquidado: 0,
-    totalPendientePago: 0,
-    empleadosActivos: 0,
-  })
-  const [resumenDocumentos, setResumenDocumentos] = useState<ResumenDocumentos>({
-    pendientesConciliar: 0,
-    conciliados: 0,
-    valorPendiente: 0,
-  })
+function diasParaVencer(fechaVencimiento: string | null) {
+  if (!fechaVencimiento) return null
+  const hoy = new Date()
+  const vence = new Date(fechaVencimiento)
+  const diff = Math.floor((vence.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+  return diff
+}
 
-  const vencimientos: Vencimiento[] = useMemo(
-    () => [
-      { id: '1', obligacion: 'Retenci├│n en la fuente (mensual)', fecha: 'Seg├║n ├║ltimo d├¡gito del NIT', estado: 'proximo' },
-      { id: '2', obligacion: 'IVA (bimestral o cuatrimestral)', fecha: 'Calendario DIAN vigente', estado: 'proximo' },
-      { id: '3', obligacion: 'Aportes a seguridad social (PILA)', fecha: 'Mismo plazo de la retenci├│n', estado: 'proximo' },
-    ],
-    []
-  )
+export default function Dashboard() {
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  const [mensaje, setMensaje] = useState('')
+  const [datosFact, setDatosFact] = useState<any>(null)
+  const [facturas, setFacturas] = useState<any[]>([])
+  const [seccion, setSeccion] = useState('dashboard')
+  const [filtroCobrarCliente, setFiltroCobrarCliente] = useState('')
+  const [filtroCobrarEstado, setFiltroCobrarEstado] = useState('')
+  const [filtroCobrarFecha, setFiltroCobrarFecha] = useState('')
+  const [pagoModal, setPagoModal] = useState<any>(null)
+  const [filtroPagarProveedor, setFiltroPagarProveedor] = useState('')
+  const [filtroPagarEstado, setFiltroPagarEstado] = useState('')
+  const [filtroPagarFecha, setFiltroPagarFecha] = useState('')
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<string | null>(null)
+  const [clientesDB, setClientesDB] = useState<any[]>([])
+  const [editandoCliente, setEditandoCliente] = useState(false)
+  const [datosEditCliente, setDatosEditCliente] = useState<any>({})
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<string | null>(null)
+  const [filtroDoc, setFiltroDoc] = useState('todos')
+  const [buscarDoc, setBuscarDoc] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroEstadoDoc, setFiltroEstadoDoc] = useState('')
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState('')
+  const [filtroFechaFin, setFiltroFechaFin] = useState('')
+  const [filtroValorMin, setFiltroValorMin] = useState('')
+  const [filtroValorMax, setFiltroValorMax] = useState('')
 
   useEffect(() => {
-    cargarResumen()
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) window.location.href = '/'
+      else {
+        setUser(data.user)
+        cargarFacturas(data.user.id)
+        cargarClientesDB(data.user.id)
+      }
+    })
   }, [])
-
-  async function cargarResumen() {
-    setCargando(true)
-    setError(null)
-
-    const { data: empresa, error: errEmpresa } = await supabase
-      .from('empresas')
-      .select('id')
-      .limit(1)
-      .single()
-
-    if (errEmpresa || !empresa) {
-      setError('No se encontr├│ ninguna empresa registrada en Supabase.')
-      setCargando(false)
-      return
-    }
-
-    const [{ data: empleados }, { data: liquidaciones }, { data: documentos }] = await Promise.all([
-      supabase.from('empleados').select('id').eq('empresa_id', empresa.id).eq('activo', true),
-      supabase.from('liquidaciones_nomina').select('neto_a_pagar, pago_realizado, empleado_id, empleados!inner(empresa_id)').eq('empleados.empresa_id', empresa.id),
-      supabase.from('documentos').select('estado_conciliacion, valor').eq('empresa_id', empresa.id),
-    ])
-
-    const totalLiquidado = (liquidaciones ?? []).reduce((sum, l: any) => sum + Number(l.neto_a_pagar ?? 0), 0)
-    const totalPendientePago = (liquidaciones ?? []).filter((l: any) => !l.pago_realizado).reduce((sum, l: any) => sum + Number(l.neto_a_pagar ?? 0), 0)
-
-    setResumenNomina({
-      totalLiquidado,
-      totalPendientePago,
-      empleadosActivos: (empleados ?? []).length,
-    })
-
-    const pendientesConciliar = (documentos ?? []).filter((d) => d.estado_conciliacion === 'pendiente')
-    const conciliados = (documentos ?? []).filter((d) => d.estado_conciliacion === 'conciliado')
-
-    setResumenDocumentos({
-      pendientesConciliar: pendientesConciliar.length,
-      conciliados: conciliados.length,
-      valorPendiente: pendientesConciliar.reduce((sum, d) => sum + Number(d.valor ?? 0), 0),
-    })
-
-  }
-
-
-    setCargando(false)
-  }
 
   const cargarFacturas = async (userId: string) => {
     const { data } = await supabase
@@ -112,6 +100,39 @@ function DashboardContenido() {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
     if (data) setFacturas(data)
+  }
+
+  const cargarClientesDB = async (userId: string) => {
+    const { data } = await supabase.from('clientes').select('*').eq('user_id', userId)
+    if (data) setClientesDB(data)
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    window.location.href = '/'
+  }
+
+  const handleArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLoading(true)
+    setMensaje('La IA esta leyendo y clasificando tu documento...')
+    setDatosFact(null)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (data.success) {
+        setDatosFact(data.datos)
+        setMensaje('Documento leido y clasificado correctamente')
+      } else {
+        setMensaje('Error: ' + data.error)
+      }
+    } catch {
+      setMensaje('Error procesando el archivo')
+    }
+    setLoading(false)
   }
 
   const handleEliminar = async (id: string) => {
@@ -125,99 +146,34 @@ function DashboardContenido() {
     cargarFacturas(user.id)
   }
 
- const handleGuardar = async () => {
-  if (!datosFact || !user) return
-  setGuardando(true)
-  // Verificar duplicado
-// Verificar duplicado por numero_factura
-if (datosFact.numero_factura) {
-  const { data: dupNumero } = await supabase
-    .from('facturas')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('numero_factura', datosFact.numero_factura)
-    .maybeSingle()
-
-  if (dupNumero) {
-    setMensaje('ÔÜá´©Å Ya existe una factura con el n├║mero ' + datosFact.numero_factura + '. No se guard├│ para evitar duplicados.')
-    setGuardando(false)
-    return
-  }
-}
-
-// Verificar duplicado por proveedor + fecha + valor
-const { data: duplicado } = await supabase
-  .from('facturas')
-  .select('id')
-  .eq('user_id', user.id)
-  .eq('proveedor', datosFact.proveedor)
-  .eq('valor', datosFact.valor)
-  .eq('fecha', datosFact.fecha)
-  .maybeSingle()
-
-if (duplicado) {
-  setMensaje('ÔÜá´©Å Este documento ya existe en ContaBot. No se guard├│ para evitar duplicados.')
-  setGuardando(false)
-  return
-}
-  let archivo_url = null
-  if (archivoFile) {
-    const ext = archivoFile.name.split('.').pop()
-    const path = `${user.id}/${Date.now()}.${ext}`
-    const { error: uploadError } = await supabase.storage
-      .from('facturas')
-      .upload(path, archivoFile)
-    if (!uploadError) {
-      const { data: urlData } = supabase.storage.from('facturas').getPublicUrl(path)
-      archivo_url = urlData.publicUrl
+  const handleGuardar = async () => {
+    if (!datosFact || !user) return
+    setGuardando(true)
+    const { error } = await supabase.from('facturas').insert({
+      user_id: user.id,
+      proveedor: datosFact.proveedor,
+      fecha: datosFact.fecha,
+      valor: datosFact.valor,
+      iva: datosFact.iva,
+      descripcion: datosFact.descripcion,
+      tipo: datosFact.tipo,
+      categoria: datosFact.categoria,
+      estado: 'Pendiente',
+    })
+    if (error) {
+      setMensaje('Error guardando: ' + error.message)
+    } else {
+      setMensaje('Documento guardado correctamente')
+      setDatosFact(null)
+      cargarFacturas(user.id)
     }
+    setGuardando(false)
   }
-  const { error } = await supabase.from('facturas').insert({
-    user_id: user.id,
-    proveedor: datosFact.proveedor,
-    fecha: datosFact.fecha,
-    valor: datosFact.valor,
-    iva: datosFact.iva,
-    descripcion: datosFact.descripcion,
-    tipo: datosFact.tipo,
-    categoria: datosFact.categoria,
-    estado: 'Pendiente',
-    archivo_url,
-    tipo_documento: datosFact.tipo_documento || null,
-    combustible: datosFact.combustible || null,
-    cuenta_puc: datosFact.cuenta_puc || null,
-    alerta: datosFact.alerta || null,
-  })
-  if (error) {
-    setMensaje('Error guardando: ' + error.message)
-  } else {
-    setMensaje('Documento guardado correctamente')
-    setDatosFact(null)
-    setArchivoFile(null)
-    cargarFacturas(user.id)
-  }
-  setGuardando(false)
-}
-  const handleGuardarNomina = async () => {
-  if (!user || !nominaForm.nombre_empleado || !nominaForm.sueldo_pagado) return
-  setGuardandoNomina(true)
-  const sueldo = parseFloat(nominaForm.sueldo_pagado)
-  const ibc = parseFloat(nominaForm.ibc_pila || '0')
-  const diferencia = sueldo - ibc
-  const { error } = await supabase.from('NOMINA').insert({
-    user_id: user.id,
-    nombre_empleado: nominaForm.nombre_empleado,
-    sueldo_pagado: sueldo,
-    ibc_pila: ibc,
-    diferencia,
-    fecha_pago: nominaForm.fecha_pago,
-    notas: nominaForm.notas,
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-  if (!error) {
-    setFacturas(data ?? [])
-  }
-}
+
+  const handleRegistrarPago = async () => {
+    if (!pagoModal) return
+    await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
+    setPagoModal(null)
     cargarFacturas(user.id)
   }
 
@@ -238,110 +194,7 @@ if (duplicado) {
     setEditandoCliente(false)
     cargarClientesDB(user.id)
   }
-  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const cargarReportePeriodo = async () => {
-  if (!user) return
-  setLoadingReporte(true)
-  setTotalDesembolsado(null)
-  setNominaReporte([])
-  setFacturasReporte([])
-
-  const periodo = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}`
-
-  const { data: dataNomina } = await supabase
-    .from('nomina_programada')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('estado', 'Pagado')
-    .eq('periodo_contable', periodo)
-
-  if (dataNomina) {
-    setNominaReporte(dataNomina)
-    setTotalDesembolsado(
-      dataNomina.reduce((a: number, b: any) => a + Math.round(b.neto_pagar || 0), 0)
-    )
-  }
-
-  const { data: dataFact } = await supabase
-    .from('facturas')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('periodo_contable', periodo)
-
-  if (dataFact) setFacturasReporte(dataFact)
-
-  setLoadingReporte(false)
-}
-const descargarAliaddoVentasCompras = () => {
-  const docs = facturasReporte.filter((f:any) => ['Factura de Venta','Factura de Compra','Gasto'].includes(f.categoria))
-  const rows: any[] = [['Fecha','NIT Tercero','Nombre Tercero','Cuenta PUC','Concepto','Base','IVA','Total','Tipo']]
-  docs.forEach((f:any) => {
-    const base = Math.round(f.valor||0)
-    const iva = Math.round(f.iva||0)
-    if (f.categoria === 'Factura de Venta') {
-      rows.push([f.fecha, f.nit||'-', f.proveedor, '4135', f.descripcion||'Ingreso por Ventas', base, 0, base, 'Ingreso'])
-      if (iva > 0) rows.push([f.fecha, f.nit||'-', f.proveedor, '2408', 'IVA Ventas', 0, iva, iva, 'IVA'])
-    } else {
-      rows.push([f.fecha, f.nit||'-', f.proveedor, '5105', f.descripcion||f.categoria, base, 0, base, 'Egreso'])
-      if (iva > 0) rows.push([f.fecha, f.nit||'-', f.proveedor, '2367', 'IVA Descontable', 0, iva, iva, 'IVA'])
-    }
-  })
-  const csv = rows.map((r:any) => r.map((c:any) => `"${c}"`).join(',')).join('\n')
-  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'})
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `Aliaddo_${meses[reporteMes-1]}_${reporteAnio}.csv`
-  a.click()
-}
-
-const descargarResumen = () => {
-  const pagados = nominaReporte.filter(n => n.estado === 'Pagado')
-  const fmt = (v: number) => Math.round(v || 0)
-  const rows = [
-    [`RESUMEN N├ôMINA - ${meses[reporteMes-1].toUpperCase()} ${reporteAnio}`],
-    [`Empleados pagados: ${pagados.length}`],
-    [],
-    ['CONCEPTO','CUENTA CONTABLE','VALOR'],
-    ['Salario B├ísico','510506', pagados.reduce((a,b)=>a+fmt(b.sueldo_base),0)],
-    ['Auxilio de Transporte','510527', pagados.reduce((a,b)=>a+fmt(b.auxilio_transporte),0)],
-    ['Bonificaciones','510548', pagados.reduce((a,b)=>a+fmt(b.bonificaciones),0)],
-    ['Primas de Servicios','510530', pagados.reduce((a,b)=>a+fmt(b.abono_prima),0)],
-    ['Deducci├│n Salud (4%)','2370', -pagados.reduce((a,b)=>a+fmt(b.salud),0)],
-    ['Deducci├│n Pensi├│n (4%)','2380', -pagados.reduce((a,b)=>a+fmt(b.pension),0)],
-    [],
-    ['TOTAL NETO A PAGAR','', pagados.reduce((a,b)=>a+fmt(b.neto_pagar),0)],
-  ]
-  const csv = rows.map(r => r.join(',')).join('\n')
-  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'})
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `Resumen_Nomina_${meses[reporteMes-1]}_${reporteAnio}.csv`
-  a.click()
-}
-
-const descargarAliaddo = () => {
-  const pagados = nominaReporte.filter(n => n.estado === 'Pagado')
-  const fmt = (v: number) => Math.round(v || 0)
-  const fecha = `${reporteAnio}-${String(reporteMes).padStart(2,'0')}-30`
-  const rows: any[] = [['Fecha','TipoDocumento','Numero','NIT','Nombre','Cuenta','Concepto','Debito','Credito']]
-  pagados.forEach((n, i) => {
-    const num = `NOM${reporteAnio}${String(reporteMes).padStart(2,'0')}${String(i+1).padStart(3,'0')}`
-    if (fmt(n.sueldo_base)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510506','Salario B├ísico',fmt(n.sueldo_base),0])
-    if (fmt(n.auxilio_transporte)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510527','Auxilio Transporte',fmt(n.auxilio_transporte),0])
-    if (fmt(n.bonificaciones)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510548','Bonificaciones',fmt(n.bonificaciones),0])
-    if (fmt(n.abono_prima)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'510530','Prima Servicios',fmt(n.abono_prima),0])
-    if (fmt(n.salud)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'2370','Deducci├│n Salud',0,fmt(n.salud)])
-    if (fmt(n.pension)>0) rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'2380','Deducci├│n Pensi├│n',0,fmt(n.pension)])
-    rows.push([fecha,'COMPROBANTE',num,n.cedula,n.nombre_empleado,'2610','Neto a Pagar',0,fmt(n.neto_pagar)])
-  })
-  const csv = rows.map(r => r.map((c: any)=>`"${c}"`).join(',')).join('\n')
-  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'})
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `Aliaddo_Nomina_${meses[reporteMes-1]}_${reporteAnio}.csv`
-  a.click()
-}
   const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
   const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorCobrar = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
@@ -403,7 +256,6 @@ const descargarAliaddo = () => {
       }, {})
   ) as any[]
 
-  // ALERTAS
   const hoy = new Date()
   const cobrarVencidas = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Vencido')
   const cobrarProximas = facturas.filter(f => {
@@ -422,7 +274,8 @@ const descargarAliaddo = () => {
     return fechaDoc.toDateString() === hoy.toDateString()
   })
   const totalAlertas = cobrarVencidas.length + cobrarProximas.length + pagarVencidas.length + pagarProximas.length
-const facturasFiltradas = facturas.filter(f => {
+
+  const facturasFiltradas = facturas.filter(f => {
     const matchFiltro = filtroDoc === 'todos' ? true :
       filtroDoc === 'Pendiente' || filtroDoc === 'Pagado' || filtroDoc === 'Vencido'
         ? f.estado === filtroDoc
@@ -440,110 +293,452 @@ const facturasFiltradas = facturas.filter(f => {
     const matchValorMax = !filtroValorMax || (f.valor || 0) <= parseFloat(filtroValorMax)
     return matchFiltro && matchBuscar && matchTipo && matchEstado && matchFechaInicio && matchFechaFin && matchValorMin && matchValorMax
   })
-  const ventasRep = facturasReporte.filter((f:any) => f.categoria === 'Factura de Venta')
-const comprasRep = facturasReporte.filter((f:any) => ['Factura de Compra','Gasto'].includes(f.categoria))
-const baseVentasRep = ventasRep.reduce((a:number,b:any) => a + Math.round(b.valor||0), 0)
-const ivaVentasRep = ventasRep.reduce((a:number,b:any) => a + Math.round(b.iva||0), 0)
-const baseComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.valor||0), 0)
-const ivaComprasRep = comprasRep.reduce((a:number,b:any) => a + Math.round(b.iva||0), 0)
+
   if (!user) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center">
       <p className="text-white">Cargando...</p>
     </div>
   )
+
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar user={user} onLogout={handleLogout} />
-      <main className="flex-1 ml-64 p-6">
-        <div className="max-w-6xl mx-auto space-y-6">
-          <section className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
-            <p className="text-sm text-slate-500">ContaBot</p>
-            <h1 className="text-3xl font-semibold text-slate-900">Resumen general</h1>
-            {error && <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-          </section>
-
-          {cargando ? (
-            <p className="text-slate-500">Cargando resumen...</p>
-          ) : (
-            <>
-              <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-                <Tarjeta titulo="Empleados activos" valor={resumenNomina.empleadosActivos.toString()} color="slate" />
-                <Tarjeta titulo="N├│mina liquidada" valor={`$${resumenNomina.totalLiquidado.toLocaleString()}`} color="emerald" />
-                <Tarjeta titulo="N├│mina pendiente de pago" valor={`$${resumenNomina.totalPendientePago.toLocaleString()}`} color="yellow" />
-                <Tarjeta titulo="Documentos sin conciliar" valor={resumenDocumentos.pendientesConciliar.toString()} color="red" />
-              </section>
-
-              <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
-                  <h2 className="text-xl font-semibold text-slate-900 mb-5">Conciliaci├│n de documentos</h2>
-                  <div className="space-y-3">
-                    <FilaResumen etiqueta="Conciliados" valor={resumenDocumentos.conciliados.toString()} />
-                    <FilaResumen etiqueta="Pendientes" valor={resumenDocumentos.pendientesConciliar.toString()} />
-                    <FilaResumen etiqueta="Valor pendiente" valor={`$${resumenDocumentos.valorPendiente.toLocaleString()}`} />
-                  </div>
-                </div>
-
-                <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
-                  <h2 className="text-xl font-semibold text-slate-900 mb-5">Vencimientos pr├│ximos</h2>
-                  <div className="space-y-3">
-                    {vencimientos.map((v) => (
-                      <div key={v.id} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">{v.obligacion}</p>
-                          <p className="text-xs text-slate-500">{v.fecha}</p>
-                        </div>
-                        <EstadoBadge estado={v.estado} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
+      <aside className="w-64 bg-slate-900 text-white flex flex-col fixed h-full z-10">
+        <div className="px-6 py-5 border-b border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">📊</div>
+            <div>
+              <h1 className="font-bold text-white text-sm">ContaBot</h1>
+              <p className="text-slate-400 text-xs">Auxiliar Contable IA</p>
+            </div>
+          </div>
         </div>
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {menuItems.map((item) => (
+            <button key={item.id} onClick={() => setSeccion(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
+                seccion === item.id ? 'bg-emerald-500 text-white font-medium' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}>
+              <span>{item.icon}</span>
+              <span className="flex-1 text-left">{item.label}</span>
+              {item.id === 'alertas' && totalAlertas > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{totalAlertas}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="px-4 py-4 border-t border-slate-700">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-xs">
+              {user.email?.[0]?.toUpperCase()}
+            </div>
+            <p className="text-xs text-white truncate flex-1">{user.email}</p>
+          </div>
+          <button onClick={handleLogout} className="w-full text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
+            Cerrar sesion
+          </button>
+        </div>
+      </aside>
+
+      <main className="flex-1 ml-64 p-8">
+
+        {seccion === 'dashboard' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
+                <p className="text-slate-500 text-sm">Ingresos del mes</p>
+                <p className="text-2xl font-bold text-emerald-600 mt-1">${totalIngresos.toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
+                <p className="text-slate-500 text-sm">Gastos del mes</p>
+                <p className="text-2xl font-bold text-red-600 mt-1">${totalGastos.toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500">
+                <p className="text-slate-500 text-sm">Caja disponible</p>
+                <p className="text-2xl font-bold text-blue-600 mt-1">${(totalIngresos - totalGastos).toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-yellow-500">
+                <p className="text-slate-500 text-sm">Documentos</p>
+                <p className="text-2xl font-bold text-yellow-600 mt-1">{facturas.length}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-green-400 cursor-pointer hover:shadow-md" onClick={() => setSeccion('cobrar')}>
+                <p className="text-slate-500 text-sm">Cuentas por Cobrar</p>
+                <p className="text-xs text-slate-400 mb-1">Facturas de Venta pendientes</p>
+                <p className="text-2xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-orange-400 cursor-pointer hover:shadow-md" onClick={() => setSeccion('pagar')}>
+                <p className="text-slate-500 text-sm">Cuentas por Pagar</p>
+                <p className="text-xs text-slate-400 mb-1">Compras y Gastos pendientes</p>
+                <p className="text-2xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-400 cursor-pointer hover:shadow-md md:col-span-3" onClick={() => setSeccion('alertas')}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-slate-500 text-sm">Alertas Activas</p>
+                    <p className="text-xs text-slate-400 mb-1">Facturas vencidas y proximas a vencer</p>
+                    <p className="text-2xl font-bold text-red-600 mt-1">{totalAlertas} alertas pendientes</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {(seccion === 'documentos' || seccion === 'revision') && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">{seccion === 'revision' ? 'Revision IA' : 'Documentos'}</h2>
+            <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">Subir Documento</h3>
+              <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
+                <p className="text-slate-600 mb-2">Selecciona tu documento - La IA lo leera y clasificara automaticamente</p>
+                <p className="text-slate-400 text-sm mb-4">JPG, PNG, PDF - maximo 5MB</p>
+                <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-xl transition-colors">
+                  {loading ? 'Procesando...' : 'Seleccionar archivo'}
+                  <input type="file" accept="image/*,application/pdf" onChange={handleArchivo} className="hidden" disabled={loading} />
+                </label>
+              </div>
+              {mensaje && <div className="mt-4 p-4 bg-slate-50 rounded-xl"><p className="text-slate-700">{mensaje}</p></div>}
+              {datosFact && (
+                <div className="mt-4 p-6 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <h3 className="font-semibold text-emerald-800 mb-3">Datos extraidos por IA:</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><p className="text-xs text-slate-500">Cliente/Proveedor</p><p className="font-medium text-slate-900">{datosFact.proveedor}</p></div>
+                    <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium text-slate-900">{datosFact.fecha}</p></div>
+                    <div><p className="text-xs text-slate-500">Valor</p><p className="font-medium text-emerald-700">${datosFact.valor?.toLocaleString()}</p></div>
+                    <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium text-slate-900">${datosFact.iva?.toLocaleString()}</p></div>
+                    <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium text-slate-900">{datosFact.descripcion}</p></div>
+                  </div>
+                  <button onClick={handleGuardar} disabled={guardando}
+                    className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
+                    {guardando ? 'Guardando...' : 'Guardar en ContaBot'}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="flex flex-wrap gap-2 mb-6">
+                {[
+                  { key: 'todos', label: 'Todos', count: facturas.length },
+                  { key: 'Factura de Venta', label: 'Ventas', count: facturas.filter(f => f.categoria === 'Factura de Venta').length },
+                  { key: 'Factura de Compra', label: 'Compras', count: facturas.filter(f => f.categoria === 'Factura de Compra').length },
+                  { key: 'Pendiente', label: 'Pendientes', count: facturas.filter(f => f.estado === 'Pendiente').length },
+                  { key: 'Pagado', label: 'Pagados', count: facturas.filter(f => f.estado === 'Pagado').length },
+                ].map((filtro) => (
+                  <button key={filtro.key} onClick={() => setFiltroDoc(filtro.key)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      filtroDoc === filtro.key ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}>
+                    {filtro.label} ({filtro.count})
+                  </button>
+                ))}
+              </div>
+              {facturasFiltradas.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p>No hay documentos que coincidan.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Fecha</th>
+                      <th className="pb-2">Cliente/Proveedor</th>
+                      <th className="pb-2">Tipo</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Estado</th>
+                      <th className="pb-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facturasFiltradas.map((f) => (
+                      <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                        <td className="py-3 text-slate-500">{f.fecha}</td>
+                        <td className="py-3 font-medium">{f.proveedor}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoriaConfig[f.categoria]?.color || 'bg-gray-100 text-gray-700'}`}>
+                            {f.categoria || f.tipo}
+                          </span>
+                        </td>
+                        <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                        <td className="py-3">
+                          <select value={f.estado || 'Pendiente'} onChange={(e) => handleEstado(f.id, e.target.value)}
+                            className={`px-2 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                            <option value="Pendiente">Pendiente</option>
+                            <option value="Pagado">Pagado</option>
+                            <option value="Vencido">Vencido</option>
+                          </select>
+                        </td>
+                        <td className="py-3">
+                          <button onClick={() => handleEliminar(f.id)} className="text-red-400 hover:text-red-600 text-xs">Eliminar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {seccion === 'cobrar' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Cuentas por Cobrar</h2>
+            <div className="bg-white rounded-2xl p-6 shadow-sm mb-6 border-l-4 border-green-400">
+              <p className="text-slate-500 text-sm">Total pendiente por cobrar</p>
+              <p className="text-3xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              {facturasCobrar.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p>No hay facturas pendientes de cobro.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Cliente</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Estado</th>
+                      <th className="pb-2">Dias Vencidos</th>
+                      <th className="pb-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facturasCobrar.map((f) => {
+                      const dias = diasVencidos(f.fecha_vencimiento, f.estado)
+                      return (
+                        <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                          <td className="py-3 font-medium">{f.proveedor}</td>
+                          <td className="py-3 text-emerald-700 font-medium">${f.valor?.toLocaleString()}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                              {f.estado || 'Pendiente'}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            {dias > 0 ? (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">{dias} dias</span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Al dia</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {f.estado !== 'Pagado' && (
+                              <button onClick={() => setPagoModal(f)}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded-lg">
+                                Registrar pago
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {seccion === 'pagar' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Cuentas por Pagar</h2>
+            <div className="bg-white rounded-2xl p-6 shadow-sm mb-6 border-l-4 border-orange-400">
+              <p className="text-slate-500 text-sm">Total pendiente por pagar</p>
+              <p className="text-3xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              {facturasPagar.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p>No hay facturas pendientes de pago.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Proveedor</th>
+                      <th className="pb-2">Valor</th>
+                      <th className="pb-2">Estado</th>
+                      <th className="pb-2">Dias Vencidos</th>
+                      <th className="pb-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facturasPagar.map((f) => {
+                      const dias = diasVencidos(f.fecha_vencimiento, f.estado)
+                      return (
+                        <tr key={f.id} className="border-b last:border-0 hover:bg-slate-50">
+                          <td className="py-3 font-medium">{f.proveedor}</td>
+                          <td className="py-3 text-orange-600 font-medium">${f.valor?.toLocaleString()}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig[f.estado || 'Pendiente']?.color}`}>
+                              {f.estado || 'Pendiente'}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            {dias > 0 ? (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">{dias} dias</span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Al dia</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {f.estado !== 'Pagado' && (
+                              <button onClick={() => setPagoModal(f)}
+                                className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1 rounded-lg">
+                                Registrar pago
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {seccion === 'alertas' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Centro de Alertas</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-red-50 rounded-2xl p-5 border border-red-200">
+                <p className="text-red-600 text-xs font-medium">Cobros Vencidos</p>
+                <p className="text-2xl font-bold text-red-700 mt-1">{cobrarVencidas.length}</p>
+              </div>
+              <div className="bg-yellow-50 rounded-2xl p-5 border border-yellow-200">
+                <p className="text-yellow-600 text-xs font-medium">Cobros Proximos</p>
+                <p className="text-2xl font-bold text-yellow-700 mt-1">{cobrarProximas.length}</p>
+              </div>
+              <div className="bg-orange-50 rounded-2xl p-5 border border-orange-200">
+                <p className="text-orange-600 text-xs font-medium">Pagos Vencidos</p>
+                <p className="text-2xl font-bold text-orange-700 mt-1">{pagarVencidas.length}</p>
+              </div>
+              <div className="bg-blue-50 rounded-2xl p-5 border border-blue-200">
+                <p className="text-blue-600 text-xs font-medium">Docs Hoy</p>
+                <p className="text-2xl font-bold text-blue-700 mt-1">{docHoy.length}</p>
+              </div>
+            </div>
+            {totalAlertas === 0 && (
+              <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+                <p className="text-lg font-medium text-emerald-600">Todo al dia</p>
+                <p className="text-sm mt-2">No hay alertas pendientes en este momento</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {seccion === 'clientes' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Clientes</h2>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              {clientesAgrupados.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p>No hay clientes aun.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Cliente</th>
+                      <th className="pb-2">Pendiente</th>
+                      <th className="pb-2">Estado</th>
+                      <th className="pb-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientesAgrupados.map((c) => (
+                      <tr key={c.nombre} className="border-b last:border-0 hover:bg-slate-50">
+                        <td className="py-3 font-medium">{c.nombre}</td>
+                        <td className="py-3 text-yellow-600 font-medium">${c.totalPendiente.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            c.estadoCartera === 'Vencida' ? 'bg-red-100 text-red-700' :
+                            c.estadoCartera === 'Pendiente' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-green-100 text-green-700'
+                          }`}>{c.estadoCartera}</span>
+                        </td>
+                        <td className="py-3">
+                          <button onClick={() => abrirCliente(c.nombre)}
+                            className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1 rounded-lg">
+                            Ver detalle
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {seccion === 'proveedores' && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Proveedores</h2>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              {proveedoresAgrupados.length === 0 ? (
+                <div className="text-center py-10 text-slate-400"><p>No hay proveedores aun.</p></div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="pb-2">Proveedor</th>
+                      <th className="pb-2">Pendiente</th>
+                      <th className="pb-2">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {proveedoresAgrupados.map((p) => (
+                      <tr key={p.nombre} className="border-b last:border-0 hover:bg-slate-50">
+                        <td className="py-3 font-medium">{p.nombre}</td>
+                        <td className="py-3 text-orange-600 font-medium">${p.totalPendiente.toLocaleString()}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.totalPendiente > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {p.totalPendiente > 0 ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {['reportes', 'configuracion'].includes(seccion) && (
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{seccion}</h2>
+            <div className="bg-white rounded-2xl p-12 shadow-sm text-center text-slate-400">
+              <p className="text-lg font-medium">Modulo en construccion</p>
+            </div>
+          </div>
+        )}
+
       </main>
-    </div>
-  )
-}
 
-function Tarjeta({ titulo, valor, color }: { titulo: string; valor: string; color: 'slate' | 'emerald' | 'yellow' | 'red' }) {
-  const estilos: Record<string, string> = {
-    slate: 'bg-slate-50 text-slate-700',
-    emerald: 'bg-emerald-50 text-emerald-700',
-    yellow: 'bg-yellow-50 text-yellow-700',
-    red: 'bg-red-50 text-red-700',
-  }
-  return (
-    <div className={`rounded-3xl p-5 ${estilos[color]}`}>
-      <p className="text-sm text-slate-500">{titulo}</p>
-      <p className="mt-1 text-2xl font-bold">{valor}</p>
-    </div>
-  )
-}
+      {pagoModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">Registrar Pago</h3>
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between">
+                <span className="text-slate-500 text-sm">Cliente/Proveedor</span>
+                <span className="font-medium text-sm">{pagoModal.proveedor}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 text-sm">Valor</span>
+                <span className="font-bold text-emerald-600">${pagoModal.valor?.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setPagoModal(null)}
+                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button onClick={handleRegistrarPago}
+                className="flex-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-medium">
+                Confirmar pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-function FilaResumen({ etiqueta, valor }: { etiqueta: string; valor: string }) {
-  return (
-    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-      <span className="text-sm text-slate-600">{etiqueta}</span>
-      <span className="text-sm font-semibold text-slate-900">{valor}</span>
     </div>
-  )
-}
-
-function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
-  const estilos: Record<Vencimiento['estado'], string> = {
-    proximo: 'bg-yellow-100 text-yellow-700',
-    vencido: 'bg-red-100 text-red-700',
-    cumplido: 'bg-emerald-100 text-emerald-700',
-  }
-  const texto: Record<Vencimiento['estado'], string> = {
-    proximo: 'Pr├│ximo',
-    vencido: 'Vencido',
-    cumplido: 'Cumplido',
-  }
-  return (
-    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${estilos[estado]}`}>
-      {texto[estado]}
-    </span>
   )
 }
