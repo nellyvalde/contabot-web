@@ -214,6 +214,16 @@ if (duplicado) {
     if (!pagoModal) return
     await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
     setPagoModal(null)
+const cargarFacturas = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('facturas')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (!error) {
+    setFacturas(data ?? [])
+  }
+}
     cargarFacturas(user.id)
   }
 
