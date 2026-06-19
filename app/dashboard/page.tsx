@@ -99,19 +99,19 @@ function DashboardContenido() {
       valorPendiente: pendientesConciliar.reduce((sum, d) => sum + Number(d.valor ?? 0), 0),
     })
 
-  async function cargarFacturas(userId: string) {
-    const { data, error } = await supabase
-      .from('facturas')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-    if (!error) {
-      setFacturas(data ?? [])
-    }
   }
 
 
     setCargando(false)
+  }
+
+  const cargarFacturas = async (userId: string) => {
+    const { data } = await supabase
+      .from('facturas')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+    if (data) setFacturas(data)
   }
 
   const handleEliminar = async (id: string) => {
