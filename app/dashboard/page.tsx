@@ -103,6 +103,16 @@ function DashboardContenido() {
     setCargando(false)
   }
 
+  async function cargarFacturas(userId: string) {
+  const { data, error } = await supabase
+    .from('facturas')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (!error) {
+    setFacturas(data ?? [])
+  }
+
   const handleEliminar = async (id: string) => {
     if (!confirm('Seguro que deseas eliminar este documento?')) return
     await supabase.from('facturas').delete().eq('id', id)
@@ -215,15 +225,7 @@ if (duplicado) {
     if (!pagoModal) return
     await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
     setPagoModal(null)
-async function cargarFacturas(userId: string) {
-  const { data, error } = await supabase
-    .from('facturas')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-  if (!error) {
-    setFacturas(data ?? [])
-  }
+
 }
     cargarFacturas(user.id)
   }
@@ -555,5 +557,6 @@ function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
   )
 }
  
+
 
 
