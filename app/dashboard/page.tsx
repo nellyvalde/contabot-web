@@ -215,7 +215,7 @@ if (duplicado) {
     if (!pagoModal) return
     await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
     setPagoModal(null)
-const cargarFacturas = async (userId: string) => {
+async function cargarFacturas(userId: string) {
   const { data, error } = await supabase
     .from('facturas')
     .select('*')
@@ -555,4 +555,5 @@ function EstadoBadge({ estado }: { estado: Vencimiento['estado'] }) {
   )
 }
  
+
 
