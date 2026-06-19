@@ -44,8 +44,7 @@ MAPEO PUC si no esta definido arriba:
         }]
       })
     
-    const data = await response.json()
-    const texto = data.content?.[0]?.text ?? ''
+    const texto = response.content?.[0]?.type === 'text' ? response.content[0].text : ''
     const clean = texto.replace(/```json|```/g, '').trim()
     const datos = JSON.parse(clean)
     return NextResponse.json({ success: true, datos })
