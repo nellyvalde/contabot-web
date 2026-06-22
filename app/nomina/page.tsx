@@ -47,7 +47,7 @@ type LiquidacionVista = {
   pago_realizado: boolean
 }
 
-type EstadoPago = 'Pendiente de pago' | 'Pagado'
+type EstadoPago = 'Pendiente de Pago' | 'Pagado'
 
 type FilaNominaProgramada = {
   id: number
@@ -235,7 +235,7 @@ function NominaContenido() {
   }, [empleados, liquidaciones])
 
   const resumenProgramada = useMemo(() => {
-    const pendientes = nominaProgramada.filter((f) => f.estado === 'Pendiente de pago')
+    const pendientes = nominaProgramada.filter((f) => f.estado === 'Pendiente de Pago')
     const pagados = nominaProgramada.filter((f) => f.estado === 'Pagado')
     const enRiesgo = nominaProgramada.filter((f) => f.alertaRiesgoUgpp)
     return {
@@ -417,7 +417,7 @@ function NominaContenido() {
 
     try {
       const registrosPendientes: RegistroPendiente[] = nominaProgramada
-        .filter((f) => f.estado === 'Pendiente de pago')
+        .filter((f) => f.estado === 'Pendiente de Pago')
         .map((f) => ({ id: f.id, nombreEmpleado: f.nombreEmpleado, netoPagar: f.netoPagar }))
 
       const resultado = await conciliarExtractoPdf(archivo, registrosPendientes)
@@ -440,7 +440,7 @@ function NominaContenido() {
     const fila = nominaProgramada.find((f) => f.id === filaId)
     if (!fila) return
 
-    const nuevoEstado: EstadoPago = fila.estado === 'Pagado' ? 'Pendiente de pago' : 'Pagado'
+    const nuevoEstado: EstadoPago = fila.estado === 'Pagado' ? 'Pendiente de Pago' : 'Pagado'
 
     const { error: errUpdate } = await supabase
       .from('nomina_programada')
