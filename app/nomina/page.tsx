@@ -137,7 +137,7 @@ function NominaContenido() {
     setError(null)
 
     const { data: empresa, error: errEmpresa } = await supabase
-      .from('empresas')
+      .from('contabot_empresas')
       .select('id')
       .limit(1)
       .single()
