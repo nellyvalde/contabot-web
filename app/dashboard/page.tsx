@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -18,16 +18,16 @@ const estadoConfig: Record<string, { color: string }> = {
 }
 
 const menuItems = [
-  { id: 'dashboard',     icon: '📊', label: 'Dashboard' },
-  { id: 'documentos',    icon: '📄', label: 'Documentos' },
-  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar' },
-  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar' },
-  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas' },
-  { id: 'revision',      icon: '🤖', label: 'Revision IA' },
-  { id: 'clientes',      icon: '👥', label: 'Clientes' },
-  { id: 'proveedores',   icon: '🏭', label: 'Proveedores' },
-  { id: 'reportes',      icon: '📈', label: 'Reportes' },
-  { id: 'configuracion', icon: '⚙️', label: 'Configuracion' },
+  { id: 'dashboard',     icon: '­ƒôè', label: 'Dashboard' },
+  { id: 'documentos',    icon: '­ƒôä', label: 'Documentos' },
+  { id: 'cobrar',        icon: '­ƒÆ░', label: 'Cuentas por Cobrar' },
+  { id: 'pagar',         icon: '­ƒÆ│', label: 'Cuentas por Pagar' },
+  { id: 'alertas',       icon: 'ÔÜá´©Å', label: 'Centro de Alertas' },
+  { id: 'revision',      icon: '­ƒñû', label: 'Revision IA' },
+  { id: 'clientes',      icon: '­ƒæÑ', label: 'Clientes' },
+  { id: 'proveedores',   icon: '­ƒÅ¡', label: 'Proveedores' },
+  { id: 'reportes',      icon: '­ƒôê', label: 'Reportes' },
+  { id: 'configuracion', icon: 'ÔÜÖ´©Å', label: 'Configuracion' },
 ]
 
 function diasDesde(fecha: string | null) {
@@ -169,7 +169,6 @@ export default function Dashboard() {
     }
     setGuardando(false)
   }
-<<<<<<< Updated upstream
 
   const handleRegistrarPago = async () => {
     if (!pagoModal) return
@@ -178,49 +177,6 @@ export default function Dashboard() {
     cargarFacturas(user.id)
   }
 
-=======
-  const { error } = await supabase.from('facturas').insert({
-    user_id: user.id,
-    proveedor: datosFact.proveedor,
-    fecha: datosFact.fecha,
-    valor: datosFact.valor,
-    iva: datosFact.iva,
-    descripcion: datosFact.descripcion,
-    tipo: datosFact.tipo,
-    categoria: datosFact.categoria,
-    estado: 'Pendiente',
-    archivo_url,
-    tipo_documento: datosFact.tipo_documento || null,
-    combustible: datosFact.combustible || null,
-    cuenta_puc: datosFact.cuenta_puc || null,
-    alerta: datosFact.alerta || null,
-  })
-  if (error) {
-    setMensaje('Error guardando: ' + error.message)
-  } else {
-    setMensaje('Documento guardado correctamente')
-    setDatosFact(null)
-    setArchivoFile(null)
-    cargarFacturas(user.id)
-  }
-  setGuardando(false)
-}
-  const handleGuardarNomina = async () => {
-  if (!user || !nominaForm.nombre_empleado || !nominaForm.sueldo_pagado) return
-  setGuardandoNomina(true)
-  const sueldo = parseFloat(nominaForm.sueldo_pagado)
-  const ibc = parseFloat(nominaForm.ibc_pila || '0')
-  const diferencia = sueldo - ibc
-  const { error } = await supabase.from('NOMINA').insert({
-    user_id: user.id,
-    nombre_empleado: nominaForm.nombre_empleado,
-    sueldo_pagado: sueldo,
-    ibc_pila: ibc,
-    diferencia,
-    fecha_pago: nominaForm.fecha_pago,
-    notas: nominaForm.notas,
-  })
->>>>>>> Stashed changes
   const abrirCliente = (nombre: string) => {
     const clienteDB = clientesDB.find((c: any) => c.nombre === nombre)
     setDatosEditCliente(clienteDB || {})
@@ -349,7 +305,7 @@ export default function Dashboard() {
       <aside className="w-64 bg-slate-900 text-white flex flex-col fixed h-full z-10">
         <div className="px-6 py-5 border-b border-slate-700">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">📊</div>
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">­ƒôè</div>
             <div>
               <h1 className="font-bold text-white text-sm">ContaBot</h1>
               <p className="text-slate-400 text-xs">Auxiliar Contable IA</p>
