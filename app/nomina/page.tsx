@@ -477,7 +477,7 @@ function NominaContenido() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
                 <div className="rounded-3xl bg-emerald-50 p-5">
                   <p className="text-sm text-slate-500">Total nómina</p>
-                  <p className="text-2xl font-bold text-emerald-700">${totalNomina.toLocaleString()}</p>
+                 <p className="text-2xl font-bold text-emerald-700">${Math.round(resumenProgramada.totalNeto).toLocaleString()}</p>
                 </div>
                 <div className="rounded-3xl bg-yellow-50 p-5">
                   <p className="text-sm text-slate-500">Pago pendiente (aportes)</p>
@@ -561,7 +561,7 @@ function NominaContenido() {
             <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div className="rounded-2xl bg-slate-50 p-4">
                 <p className="text-xs text-slate-500">Total neto del periodo</p>
-                <p className="text-lg font-bold text-slate-900">${resumenProgramada.totalNeto.toLocaleString()}</p>
+                <p className="text-lg font-bold text-slate-900">${Math.round(resumenProgramada.totalNeto).toLocaleString()}</p>
               </div>
               <div className="rounded-2xl bg-emerald-50 p-4">
                 <p className="text-xs text-slate-500">Pagados</p>
@@ -619,7 +619,7 @@ function NominaContenido() {
                               : undefined
                           }
                         >
-                          ${fila.netoPagar.toLocaleString()}
+                          ${Math.round(fila.netoPagar).toLocaleString()}
                         </td>
                         <td className="px-4 py-4 text-center">
                           {fila.alertaRiesgoUgpp ? (

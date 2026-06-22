@@ -169,6 +169,7 @@ export default function Dashboard() {
     }
     setGuardando(false)
   }
+<<<<<<< Updated upstream
 
   const handleRegistrarPago = async () => {
     if (!pagoModal) return
@@ -177,6 +178,49 @@ export default function Dashboard() {
     cargarFacturas(user.id)
   }
 
+=======
+  const { error } = await supabase.from('facturas').insert({
+    user_id: user.id,
+    proveedor: datosFact.proveedor,
+    fecha: datosFact.fecha,
+    valor: datosFact.valor,
+    iva: datosFact.iva,
+    descripcion: datosFact.descripcion,
+    tipo: datosFact.tipo,
+    categoria: datosFact.categoria,
+    estado: 'Pendiente',
+    archivo_url,
+    tipo_documento: datosFact.tipo_documento || null,
+    combustible: datosFact.combustible || null,
+    cuenta_puc: datosFact.cuenta_puc || null,
+    alerta: datosFact.alerta || null,
+  })
+  if (error) {
+    setMensaje('Error guardando: ' + error.message)
+  } else {
+    setMensaje('Documento guardado correctamente')
+    setDatosFact(null)
+    setArchivoFile(null)
+    cargarFacturas(user.id)
+  }
+  setGuardando(false)
+}
+  const handleGuardarNomina = async () => {
+  if (!user || !nominaForm.nombre_empleado || !nominaForm.sueldo_pagado) return
+  setGuardandoNomina(true)
+  const sueldo = parseFloat(nominaForm.sueldo_pagado)
+  const ibc = parseFloat(nominaForm.ibc_pila || '0')
+  const diferencia = sueldo - ibc
+  const { error } = await supabase.from('NOMINA').insert({
+    user_id: user.id,
+    nombre_empleado: nominaForm.nombre_empleado,
+    sueldo_pagado: sueldo,
+    ibc_pila: ibc,
+    diferencia,
+    fecha_pago: nominaForm.fecha_pago,
+    notas: nominaForm.notas,
+  })
+>>>>>>> Stashed changes
   const abrirCliente = (nombre: string) => {
     const clienteDB = clientesDB.find((c: any) => c.nombre === nombre)
     setDatosEditCliente(clienteDB || {})
