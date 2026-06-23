@@ -300,25 +300,6 @@ useEffect(() => {
 
       <main className="flex-1 ml-64 p-8">
 
-        <div className="flex gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
-          {[
-            { id: 'dashboard', label: 'Dashboard' },
-            { id: 'cobrar', label: 'Cuentas por Cobrar' },
-            { id: 'pagar', label: 'Cuentas por Pagar' },
-            { id: 'alertas', label: 'Centro de Alertas' },
-            { id: 'clientes', label: 'Clientes' },
-            { id: 'proveedores', label: 'Proveedores' },
-            { id: 'configuracion', label: 'Configuracion' },
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setSeccion(tab.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${
-                seccion === tab.id ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:bg-slate-100'
-              }`}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
         {seccion === 'dashboard' && (
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
