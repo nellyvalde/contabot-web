@@ -74,6 +74,7 @@ useEffect(() => {
   const params = new URLSearchParams(window.location.search)
   const sec = params.get('seccion')
   if (sec) setSeccion(sec)
+  else setSeccion('dashboard')
 }, [])
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
