@@ -21,7 +21,7 @@ function parsearValor(texto: string, config: BancoConfig): number {
   if (!texto) return 0
   let limpio = texto.toString()
   if (config.simboloMoneda) limpio = limpio.replace(config.simboloMoneda, '')
-  if (config.separadorMiles) limpio = limpio.replaceAll(config.separadorMiles, '')
+  if (config.separadorMiles) limpio = limpio.replace(/\./g, '').replace(',', '.')
   limpio = limpio.replace(',', '.').trim()
   return Math.abs(parseFloat(limpio) || 0)
 }
@@ -121,7 +121,7 @@ export default function BancosPage() {
 
       // Detectar filas por patron de fecha YYYY/MM/DD o DD/MM/YYYY
       const regexFecha = /^\d{4}\/\d{2}\/\d{2}$|^\d{2}\/\d{2}\/\d{4}$/
-      const regexValor = /^\$[\d.,]+$/
+      const regexValor = /^\$[\d.,]+$|^\$[\d]+$/
 
       let j = 0
       while (j < items.length) {
