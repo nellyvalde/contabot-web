@@ -15,6 +15,7 @@ const menuItems = [
   { id: 'revision',      icon: '🤖', label: 'Revision IA',        href: '/documentos?vista=revision' },
   { id: 'clientes',      icon: '👥', label: 'Clientes',           href: '/clientes' },
   { id: 'proveedores',   icon: '🏭', label: 'Proveedores',        href: '/dashboard?seccion=proveedores' },
+  { id: 'bancos',        icon: '🏦', label: 'Conciliacion Bancaria', href: '/bancos' },
   { id: 'reportes',      icon: '📈', label: 'Reportes',           href: '/reportes' },
   { id: 'configuracion', icon: '⚙️', label: 'Configuracion',      href: '/configuracion' },
 ]
@@ -35,6 +36,7 @@ export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps
     }
     if (pathname === '/nomina') return 'nomina'
     if (pathname === '/reportes') return 'reportes'
+    if (pathname === '/bancos') return 'bancos'
     if (pathname === '/cobrar') return 'cobrar'
 if (pathname === '/pagar') return 'pagar'
 if (pathname === '/alertas') return 'alertas'
