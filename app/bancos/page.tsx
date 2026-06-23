@@ -108,53 +108,70 @@ export default function BancosPage() {
   }
 
   const leerPDF = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
-    const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
-    const arrayBuffer = await file.arrayBuffer()
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    const movs: MovimientoBanco[] = []
+  const pdfjsLib = await import('pdfjs-dist')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const movs: MovimientoBanco[] = []
+  const regexFecha = /^\d{4}\/\d{2}\/\d{2}$|^\d{2}\/\d{2}\/\d{4}$/
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const items = content.items.map((item: any) => item.str.trim()).filter(Boolean)
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
 
-      // Detectar filas por patron de fecha YYYY/MM/DD o DD/MM/YYYY
-      const regexFecha = /^\d{4}\/\d{2}\/\d{2}$|^\d{2}\/\d{2}\/\d{4}$/
-      const regexValor = /^\$[\d.,]+$|^\$[\d]+$/
-
-      let j = 0
-      while (j < items.length) {
-        if (regexFecha.test(items[j])) {
-          const fecha = parsearFecha(items[j], config.formatoFecha)
-          let descripcion = ''
-          let valor = 0
-          let k = j + 1
-
-          // Recoger descripcion hasta encontrar el valor
-          while (k < items.length && !regexValor.test(items[k]) && !regexFecha.test(items[k])) {
-            descripcion += (descripcion ? ' ' : '') + items[k]
-            k++
-          }
-
-          if (k < items.length && regexValor.test(items[k])) {
-            valor = parsearValor(items[k], config)
-            k++
-          }
-
-          if (fecha && valor > 0) {
-            movs.push({ fecha, descripcion, valor })
-          }
-          j = k
-        } else {
-          j++
-        }
-      }
+    // Agrupar items por linea (coordenada Y similar)
+    const lineas: Record<number, any[]> = {}
+    for (const item of content.items as any[]) {
+      const y = Math.round(item.transform[5])
+      if (!lineas[y]) lineas[y] = []
+      lineas[y].push(item)
     }
 
-    return movs
+    // Ordenar lineas de arriba a abajo
+    const ysOrdenados = Object.keys(lineas).map(Number).sort((a, b) => b - a)
+
+    for (const y of ysOrdenados) {
+      // Ordenar items de izquierda a derecha dentro de cada linea
+      const itemsLinea = lineas[y].sort((a: any, b: any) => a.transform[4] - b.transform[4])
+      const textos = itemsLinea.map((item: any) => item.str.trim()).filter(Boolean)
+
+      if (textos.length < 2) continue
+
+      // Primera columna debe ser fecha
+      if (!regexFecha.test(textos[0])) continue
+
+      const fecha = parsearFecha(textos[0], config.formatoFecha)
+
+      // Ultima columna suele ser saldo, penultima es valor
+      // Buscar el valor: texto que empiece con $ o sea numero
+      const regexNum = /^\$?[\d.,]+$/
+      let valor = 0
+      let descripcion = ''
+
+      // Juntar todo el texto del medio como descripcion, el ultimo numero como valor
+      const numerosEncontrados: number[] = []
+      const partesDesc: string[] = []
+
+      for (let j = 1; j < textos.length; j++) {
+        const t = textos[j].replace(/\s/g, '')
+        if (regexNum.test(t)) {
+          const v = parsearValor(t, config)
+          if (v > 0) numerosEncontrados.push(v)
+        } else {
+          partesDesc.push(textos[j])
+        }
+      }
+
+      descripcion = partesDesc.join(' ')
+      // El primer valor numerico es el monto de la transaccion
+      if (numerosEncontrados.length > 0) valor = numerosEncontrados[0]
+
+      if (fecha && valor > 0) movs.push({ fecha, descripcion, valor })
+    }
   }
 
+  return movs
+}
   const leerExcel = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
     const XLSX = await import('xlsx')
     const arrayBuffer = await file.arrayBuffer()
