@@ -9,14 +9,14 @@ const menuItems = [
   { id: 'dashboard',     icon: '📊', label: 'Dashboard',          href: '/dashboard' },
   { id: 'documentos',    icon: '📄', label: 'Documentos',         href: '/documentos' },
   { id: 'nomina',        icon: '🧾', label: 'Nomina',             href: '/nomina' },
-  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar', href: '/dashboard?seccion=cobrar' },
-  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar',  href: '/dashboard?seccion=pagar' },
+  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar', href: '/cobrar' },
+  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar',  href: '/pagar' },
   { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas',  href: '/dashboard?seccion=alertas' },
   { id: 'revision',      icon: '🤖', label: 'Revision IA',        href: '/documentos?vista=revision' },
-  { id: 'clientes',      icon: '👥', label: 'Clientes',           href: '/dashboard?seccion=clientes' },
+  { id: 'clientes',      icon: '👥', label: 'Clientes',           href: '/clientes' },
   { id: 'proveedores',   icon: '🏭', label: 'Proveedores',        href: '/dashboard?seccion=proveedores' },
   { id: 'reportes',      icon: '📈', label: 'Reportes',           href: '/reportes' },
-  { id: 'configuracion', icon: '⚙️', label: 'Configuracion',      href: '/dashboard?seccion=configuracion' },
+  { id: 'configuracion', icon: '⚙️', label: 'Configuracion',      href: '/configuracion' },
 ]
 
 type SidebarProps = {
@@ -35,7 +35,13 @@ export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps
     }
     if (pathname === '/nomina') return 'nomina'
     if (pathname === '/reportes') return 'reportes'
-    if (pathname === '/dashboard') return searchParams.get('seccion') || 'dashboard'
+    if (pathname === '/cobrar') return 'cobrar'
+if (pathname === '/pagar') return 'pagar'
+if (pathname === '/alertas') return 'alertas'
+if (pathname === '/clientes') return 'clientes'
+if (pathname === '/proveedores') return 'proveedores'
+if (pathname === '/configuracion') return 'configuracion'
+if (pathname === '/dashboard') return 'dashboard'
     return ''
   })()
 
