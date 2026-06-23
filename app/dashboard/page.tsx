@@ -70,7 +70,11 @@ export default function Dashboard() {
   const [filtroFechaFin, setFiltroFechaFin] = useState('')
   const [filtroValorMin, setFiltroValorMin] = useState('')
   const [filtroValorMax, setFiltroValorMax] = useState('')
-
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search)
+  const sec = params.get('seccion')
+  if (sec) setSeccion(sec)
+}, [])
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) window.location.href = '/'
