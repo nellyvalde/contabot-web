@@ -314,7 +314,7 @@ export default function Dashboard() {
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {menuItems.map((item) => (
-            <button key={item.id} onClick={() => setSeccion(item.id)}
+            <button key={item.id} onClick={() => ['nomina','documentos','reportes'].includes(item.id) ? window.location.href = '/' + item.id : setSeccion(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
                 seccion === item.id ? 'bg-emerald-500 text-white font-medium' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
               }`}>
