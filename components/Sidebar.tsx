@@ -11,7 +11,7 @@ const menuItems = [
   { id: 'nomina',        icon: '🧾', label: 'Nomina',             href: '/nomina' },
   { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar', href: '/cobrar' },
   { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar',  href: '/pagar' },
-  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas',  href: '/dashboard?seccion=alertas' },
+  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas',  href: '/alertas' },
   { id: 'revision',      icon: '🤖', label: 'Revision IA',        href: '/documentos?vista=revision' },
   { id: 'clientes',      icon: '👥', label: 'Clientes',           href: '/clientes' },
   { id: 'proveedores',   icon: '🏭', label: 'Proveedores',        href: '/dashboard?seccion=proveedores' },
