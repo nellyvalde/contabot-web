@@ -57,11 +57,35 @@ export default function BancosPage() {
   const [paso, setPaso] = useState<'subir' | 'revisar'>('subir')
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) window.location.href = '/'
-      else setUser(data.user)
-    })
-  }, [])
+  supabase.auth.getUser().then(async ({ data }) => {
+    if (!data.user) window.location.href = '/'
+    else {
+      setUser(data.user)
+      // Cargar conciliacion previa si existe
+      const { data: previa } = await supabase
+        .from('conciliaciones_bancarias')
+        .select('*')
+        .eq('user_id', data.user.id)
+        .order('fecha_carga', { ascending: false })
+      
+      if (previa && previa.length > 0) {
+        const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
+          movimiento: {
+            fecha: r.movimiento_fecha,
+            descripcion: r.movimiento_descripcion,
+            valor: r.movimiento_valor,
+          },
+          documentoEncontrado: null,
+          nominaEncontrada: null,
+          estadoCruce: r.estado,
+        }))
+        setResultados(resultadosPrevios)
+        setPaso('revisar')
+        setMensaje(`Cargando conciliacion previa: ${previa.length} movimientos.`)
+      }
+    }
+  })
+}, [])
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
@@ -239,47 +263,61 @@ export default function BancosPage() {
     return movs
   }
 
-  const cruzarConDocumentos = async (movs: MovimientoBanco[]) => {
-    if (!user) return
+ const cruzarConDocumentos = async (movs: MovimientoBanco[]) => {
+  if (!user) return
 
-    const { data: documentos } = await supabase
-      .from('facturas')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('estado', 'Pendiente')
+  const { data: documentos } = await supabase
+    .from('facturas')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('estado', 'Pendiente')
 
-    const { data: nomina } = await supabase
-      .from('nomina_programada')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('estado', 'Pendiente de Pago')
+  const { data: nomina } = await supabase
+    .from('nomina_programada')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('estado', 'Pendiente de Pago')
 
-    const resultadosCruce: ResultadoCruce[] = movs.map(mov => {
-      // Buscar en documentos
-      const docEncontrado = (documentos || []).find(doc => {
-        const mismoValor = Math.abs((doc.valor || 0) - mov.valor) < 100
-        const fechaCercana = doc.fecha ? diferenciaDias(doc.fecha, mov.fecha) <= 3 : false
-        return mismoValor && fechaCercana
-      }) || null
+  const resultadosCruce: ResultadoCruce[] = movs.map(mov => {
+    const docEncontrado = (documentos || []).find(doc => {
+      const mismoValor = Math.abs((doc.valor || 0) - mov.valor) < 1000
+      const fechaCercana = doc.fecha ? diferenciaDias(doc.fecha, mov.fecha) <= 5 : false
+      return mismoValor && fechaCercana
+    }) || null
 
-      // Buscar en nomina
-      const nominaEncontrada = !docEncontrado ? ((nomina || []).find(n => {
-        const mismoValor = Math.abs((n.neto_pagar || 0) - mov.valor) < 100
-        return mismoValor
-      }) || null) : null
+    const nominaEncontrada = !docEncontrado ? ((nomina || []).find(n => {
+      const mismoValor = Math.abs((n.neto_pagar || 0) - mov.valor) < 1000
+      return mismoValor
+    }) || null) : null
 
-      return {
-        movimiento: mov,
-        documentoEncontrado: docEncontrado,
-        nominaEncontrada,
-        estadoCruce: (docEncontrado || nominaEncontrada) ? 'encontrado' : 'no_encontrado',
-      }
-    })
+    return {
+      movimiento: mov,
+      documentoEncontrado: docEncontrado,
+      nominaEncontrada,
+      estadoCruce: (docEncontrado || nominaEncontrada) ? 'encontrado' : 'no_encontrado',
+    }
+  })
 
-    setResultados(resultadosCruce)
-    const encontrados = resultadosCruce.filter(r => r.estadoCruce === 'encontrado').length
-    setMensaje(`Cruce completado: ${encontrados} de ${movs.length} movimientos coinciden con documentos.`)
-  }
+  // Guardar en Supabase para persistencia
+  await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).eq('estado', 'no_encontrado')
+  
+  const filas = resultadosCruce.map(r => ({
+    user_id: user.id,
+    banco: bancoSeleccionado,
+    movimiento_fecha: r.movimiento.fecha,
+    movimiento_descripcion: r.movimiento.descripcion,
+    movimiento_valor: r.movimiento.valor,
+    documento_id: r.documentoEncontrado?.id || null,
+    nomina_id: r.nominaEncontrada?.id || null,
+    estado: r.estadoCruce,
+  }))
+
+  await supabase.from('conciliaciones_bancarias').insert(filas)
+
+  setResultados(resultadosCruce)
+  const encontrados = resultadosCruce.filter(r => r.estadoCruce === 'encontrado').length
+  setMensaje(`Cruce completado: ${encontrados} de ${movs.length} movimientos coinciden con documentos.`)
+}
 
   const confirmarCruce = async (idx: number) => {
     const resultado = resultados[idx]
