@@ -162,11 +162,19 @@ export default function BancosPage() {
       const descripcion = partesDesc.join(' ')
 
       let valorTexto = ''
-      if (gruposNumericos.length >= 2) {
-        valorTexto = gruposNumericos[gruposNumericos.length - 2]
-      } else if (gruposNumericos.length === 1) {
-        valorTexto = gruposNumericos[0]
-      }
+     if (gruposNumericos.length >= 2) {
+      const gruposSeparados: string[] = []
+      for (const g of gruposNumericos) {
+    const partes = g.split(/(?<=\d)(?=\$)/)
+     gruposSeparados.push(...partes)
+     }
+  valorTexto = gruposSeparados.length >= 2
+    ? gruposSeparados[gruposSeparados.length - 2]
+    : gruposSeparados[0]
+} else if (gruposNumericos.length === 1) {
+  const partes = gruposNumericos[0].split(/(?<=\d)(?=\$)/)
+  valorTexto = partes.length >= 2 ? partes[partes.length - 2] : partes[0]
+}
 
       const valorLimpio = valorTexto
         .replace(/\$/g, '')
