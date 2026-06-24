@@ -69,12 +69,39 @@ export default function BancosPage() {
         .order('fecha_carga', { ascending: false })
       
       if (previa && previa.length > 0) {
-        const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
-          movimiento: {
-            fecha: r.movimiento_fecha,
-            descripcion: r.movimiento_descripcion,
-            valor: r.movimiento_valor,
-          },
+  // Cargar documentos y nomina para mostrar detalles
+  const { data: facturas } = await supabase
+    .from('facturas')
+    .select('*')
+    .eq('user_id', data.user.id)
+
+  const { data: nomina } = await supabase
+    .from('nomina_programada')
+    .select('*')
+    .eq('user_id', data.user.id)
+
+  const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => {
+    const docEncontrado = r.documento_id
+      ? (facturas || []).find((f: any) => f.id === r.documento_id) || null
+      : null
+    const nominaEncontrada = r.nomina_id
+      ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null
+      : null
+    return {
+      movimiento: {
+        fecha: r.movimiento_fecha,
+        descripcion: r.movimiento_descripcion,
+        valor: r.movimiento_valor,
+      },
+      documentoEncontrado: docEncontrado,
+      nominaEncontrada,
+      estadoCruce: r.estado,
+    }
+  })
+  setResultados(resultadosPrevios)
+  setPaso('revisar')
+  setMensaje(`Conciliacion previa cargada: ${previa.length} movimientos.`)
+}
           documentoEncontrado: null,
           nominaEncontrada: null,
           estadoCruce: r.estado,
