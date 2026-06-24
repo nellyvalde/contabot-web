@@ -165,7 +165,8 @@ export default function BancosPage() {
 
       descripcion = partesDesc.join(' ')
       // El primer valor numerico es el monto de la transaccion
-      if (numerosEncontrados.length > 0) valor = numerosEncontrados[0]
+      if (numerosEncontrados.length >= 2) valor = numerosEncontrados[numerosEncontrados.length - 2]
+      else if (numerosEncontrados.length === 1) valor = numerosEncontrados[0]
 
       if (fecha && valor > 0) movs.push({ fecha, descripcion, valor })
     }
