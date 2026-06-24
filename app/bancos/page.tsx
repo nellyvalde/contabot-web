@@ -145,28 +145,25 @@ export default function BancosPage() {
 
       // Ultima columna suele ser saldo, penultima es valor
       // Buscar el valor: texto que empiece con $ o sea numero
-      const regexNum = /^\$?[\d.,]+$/
-      let valor = 0
-      let descripcion = ''
-
-      // Juntar todo el texto del medio como descripcion, el ultimo numero como valor
-      const numerosEncontrados: number[] = []
       const partesDesc: string[] = []
+let valorTexto = ''
+let ultimoEraNumero = false
 
-      for (let j = 1; j < textos.length; j++) {
-        const t = textos[j].replace(/\s/g, '')
-        if (regexNum.test(t)) {
-          const v = parsearValor(t, config)
-          if (v > 0) numerosEncontrados.push(v)
-        } else {
-          partesDesc.push(textos[j])
-        }
-      }
+for (let j = 1; j < textos.length; j++) {
+  const t = textos[j].replace(/\s/g, '')
+  const esNumero = /^\$?[\d.,]+$/.test(t)
+  if (esNumero) {
+    valorTexto += t.replace('$', '')
+    ultimoEraNumero = true
+  } else {
+    if (ultimoEraNumero) valorTexto = ''
+    ultimoEraNumero = false
+    partesDesc.push(textos[j])
+  }
+}
 
-      descripcion = partesDesc.join(' ')
-      // El primer valor numerico es el monto de la transaccion
-      if (numerosEncontrados.length >= 2) valor = numerosEncontrados[numerosEncontrados.length - 2]
-      else if (numerosEncontrados.length === 1) valor = numerosEncontrados[0]
+const descripcion = partesDesc.join(' ')
+valor = parsearValor(valorTexto || '0', config)
 
       if (fecha && valor > 0) movs.push({ fecha, descripcion, valor })
     }
