@@ -407,7 +407,15 @@ export default function BancosPage() {
                   ✔️ Confirmados: {resultados.filter(r => r.estadoCruce === 'confirmado').length}
                 </span>
               </div>
-              <button onClick={() => { setPaso('subir'); setResultados([]); setMovimientos([]); setMensaje('') }}
+              <button onClick={async () => {
+              if (confirm('¿Deseas limpiar la conciliacion actual y subir un nuevo extracto? Los registros confirmados se conservaran.')) {
+              await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).neq('estado', 'confirmado')
+              setPaso('subir')
+              setResultados([])
+              setMovimientos([])
+             setMensaje('')
+             }
+             }}
                 className="text-sm text-slate-500 hover:text-slate-700 underline">
                 Subir otro extracto
               </button>
