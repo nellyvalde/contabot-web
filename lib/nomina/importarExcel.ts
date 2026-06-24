@@ -4,7 +4,7 @@
 
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
-import { calcularLiquidacion } from './calculo'
+import { liquidarNomina } from './calculo'
 import { CUENTAS_PUC_NOMINA } from './conceptosPuc'
 
 // ============================================================
@@ -216,7 +216,7 @@ export async function guardarNominaProgramada(
 
   for (const fila of filas) {
     try {
-      const liquidacion = calcularLiquidacion(fila.conceptos)
+      const liquidacion = liquidarNomina(fila.conceptos)
       
       if (liquidacion.alertaRiesgoUgpp) {
         alertasUgpp.push({ nombre: fila.nombre, excesoLey1393: liquidacion.excesoLey1393 })
