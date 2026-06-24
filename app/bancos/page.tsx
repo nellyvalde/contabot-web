@@ -102,14 +102,7 @@ export default function BancosPage() {
   setPaso('revisar')
   setMensaje(`Conciliacion previa cargada: ${previa.length} movimientos.`)
 }
-          documentoEncontrado: null,
-          nominaEncontrada: null,
-          estadoCruce: r.estado,
-        }))
-        setResultados(resultadosPrevios)
-        setPaso('revisar')
-        setMensaje(`Cargando conciliacion previa: ${previa.length} movimientos.`)
-      }
+       
     }
   })
 }, [])
