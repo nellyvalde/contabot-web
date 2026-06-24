@@ -222,7 +222,7 @@ export async function guardarNominaProgramada(
         alertasUgpp.push({ nombre: fila.nombre, excesoLey1393: liquidacion.excesoLey1393 })
       }
 
-      const netoPagar = fila.netoExplicito ?? liquidacion.netoPagar
+      const netoPagar = fila.netoExplicito ?? liquidacion.netoAPagar
 
       const registro = {
         user_id: userId,
