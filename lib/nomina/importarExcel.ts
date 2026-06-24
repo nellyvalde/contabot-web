@@ -1,224 +1,299 @@
 // lib/nomina/importarExcel.ts
-//
-// Importación de novedades de nómina desde Excel hacia tu tabla REAL
-// `nomina_programada` (sueldo_base, auxilio_transporte, bonificaciones,
-// prima, vacaciones, prestamo, descuento, abono_prima, periodo_contable,
-// estado, etc.) — ya filtrada por user_id, no por empresa_id.
-//
-// Requiere la librería 'xlsx' (SheetJS):
-//
-//   npm install xlsx
-//
-// Formato de Excel esperado (encabezados en la primera fila, sin importar
-// mayúsculas/minúsculas ni acentos). Solo Cedula, Nombre y SueldoBase son
-// obligatorios; el resto es opcional y se asume 0 si no viene:
-//
-//   | Cedula     | Nombre        | Area       | SueldoBase | Transporte | Bonos   | Prima | Vacaciones | Prestamo | Descuento | AbonoPrima | Cesantias | AbonoCesantias | AbonoLiquidacion | DiasTrabajados |
-//   |------------|---------------|------------|------------|------------|---------|-------|------------|----------|-----------|------------|-----------|----------------|------------------|----------------|
-//   | 1020304050 | Laura Torres  | Contable   | 2500000    | 200000     | 300000  | 0     | 0          | 0        | 0         | 0          | 0         | 0              | 0                | 30             |
-//
-// ⚠️ Tu tabla no tiene una restricción única (solo primary key por id), así
-// que el "upsert" se hace aquí en código: por cada fila del Excel se busca
-// si ya existe un registro con la misma cédula + periodo_contable + user_id;
-// si existe, se actualiza esa fila por su id; si no, se inserta una nueva.
-// Si encuentra MÁS de una coincidencia (datos duplicados de antes), la fila
-// se omite y se reporta, en vez de adivinar cuál sobrescribir.
+// Normalizador Semantico Inteligente para importacion de nomina
+// Compatible con cualquier formato de Excel colombiano
 
 import * as XLSX from 'xlsx'
-import { supabase } from '@/lib/supabase/client'
-import { CUENTAS_PUC_NOMINA, calcularLiquidacion, type ConceptosNomina } from '@/lib/nomina/conceptosPuc'
+import { supabase } from '@/lib/supabase'
+import { calcularLiquidacion } from './calculo'
+import { CUENTAS_PUC_NOMINA } from './conceptosPuc'
 
-type FilaExcelCrudo = Record<string, string | number | undefined>
-
-export type FilaImportada = {
-  cedula: string
-  nombre: string
-  area: string | null
-  diasTrabajados: number | null
-  conceptos: ConceptosNomina
-  netoExplicito: number | null
-  observaciones: string | null
+// ============================================================
+// DETECTOR SEMANTICO DE COLUMNAS
+// Busca la columna correcta por palabras clave sin importar
+// el nombre exacto que use el cliente
+// ============================================================
+function detectarColumna(encabezados: string[], palabrasClave: string[]): string | null {
+  for (const enc of encabezados) {
+    const normalizado = enc.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+    for (const clave of palabrasClave) {
+      const claveNorm = clave.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, '')
+        .trim()
+      if (normalizado.includes(claveNorm)) return enc
+    }
+  }
+  return null
 }
 
-export type ResultadoImportacion = {
+function leerNumero(valor: any): number {
+  if (valor === undefined || valor === null || valor === '') return 0
+  const str = String(valor)
+    .replace(/\$/g, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim()
+  return parseFloat(str) || 0
+}
+
+function leerTexto(valor: any): string {
+  if (valor === undefined || valor === null) return ''
+  return String(valor).trim()
+}
+
+// ============================================================
+// PARSER PRINCIPAL
+// ============================================================
+export async function parseExcelNomina(archivo: File): Promise<any[]> {
+  const arrayBuffer = await archivo.arrayBuffer()
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+  const hoja = workbook.Sheets[workbook.SheetNames[0]]
+  
+  // Convertir a JSON con encabezados
+  const filasCrudas: any[] = XLSX.utils.sheet_to_json(hoja, { 
+    defval: '',
+    raw: false 
+  })
+
+  if (filasCrudas.length === 0) return []
+
+  // Detectar columnas semanticamente
+  const encabezados = Object.keys(filasCrudas[0])
+  
+  const colCedula = detectarColumna(encabezados, [
+    'cedula', 'cc', 'identificacion', 'documento', 'id empleado', 'nro documento',
+    'numero documento', 'doc', 'identificador', 'nit', 'dni'
+  ])
+  
+  const colNombre = detectarColumna(encabezados, [
+    'nombre', 'empleado', 'nombres', 'colaborador', 'trabajador', 
+    'funcionario', 'personal', 'apellidos', 'nombre empleado',
+    'nombre completo', 'apellido'
+  ])
+  
+  const colArea = detectarColumna(encabezados, [
+    'area', 'cargo', 'puesto', 'departamento', 'seccion', 'sede',
+    'lugar', 'centro costo', 'centro de costo', 'ubicacion', 'trabajo'
+  ])
+  
+  const colBasico = detectarColumna(encabezados, [
+    'basico', 'sueldo', 'salario', 'pago base', 'salario base',
+    'sueldo base', 'salario basico', 'basico mensual', 'salario mensual'
+  ])
+  
+  const colTransporte = detectarColumna(encabezados, [
+    'transporte', 'auxilio', 'aux transporte', 'auxilio transporte',
+    'aux de transporte', 'subsidio transporte'
+  ])
+  
+  const colBonos = detectarColumna(encabezados, [
+    'bonos', 'bonificacion', 'bonificaciones', 'comision', 'comisiones',
+    'nosalarial', 'no salarial', 'extra', 'recargo', 'incentivo'
+  ])
+  
+  const colPrima = detectarColumna(encabezados, [
+    'prima', 'prima servicios', 'prima de servicios'
+  ])
+  
+  const colVacaciones = detectarColumna(encabezados, [
+    'vacaciones', 'vacacion', 'dias vacaciones'
+  ])
+
+  const colPrestamo = detectarColumna(encabezados, [
+    'prestamo', 'credito', 'anticipos', 'anticipo', 'adelanto'
+  ])
+  
+  const colDescuento = detectarColumna(encabezados, [
+    'descuento', 'descuentos', 'deduccion', 'deducciones', 'embargo'
+  ])
+  
+  const colAbonoPrima = detectarColumna(encabezados, [
+    'abono prima', 'abono de prima', 'prima abono', 'pago prima'
+  ])
+
+  const colCesantias = detectarColumna(encabezados, [
+    'cesantias', 'cesantia', 'auxilio cesantias'
+  ])
+
+  const colAbonoCesantias = detectarColumna(encabezados, [
+    'abono cesantias', 'pago cesantias', 'cesantias abono'
+  ])
+
+  const colAbonoLiquidacion = detectarColumna(encabezados, [
+    'liquidacion', 'abono liquidacion', 'pago liquidacion', 'indemnizacion'
+  ])
+
+  const colDias = detectarColumna(encabezados, [
+    'dias', 'dias trabajados', 'dias laborados', 'jornada', 'dias laborales'
+  ])
+  
+  const colNeto = detectarColumna(encabezados, [
+    'neto pagado', 'neto pagar', 'neto a pagar', 'a pagar', 'total pagar',
+    'total a pagar', 'valor neto', 'neto', 'pago neto', 'total neto',
+    'salario neto', 'salario real', 'valor pagado', 'total pagado'
+  ])
+
+  const colObservaciones = detectarColumna(encabezados, [
+    'observaciones', 'observacion', 'notas', 'nota', 'comentario', 'detalle'
+  ])
+
+  // Procesar filas
+  const filas: any[] = []
+  
+  for (const fila of filasCrudas) {
+    // Ignorar filas sin nombre (totales, espacios en blanco, encabezados duplicados)
+    const nombre = colNombre ? leerTexto(fila[colNombre]) : ''
+    if (!nombre || nombre.length < 2) continue
+    
+    // Ignorar filas que parezcan totales
+    const nombreLower = nombre.toLowerCase()
+    if (['total', 'totales', 'subtotal', 'suma', 'grand total'].some(t => nombreLower.includes(t))) continue
+
+    const cedula = colCedula ? leerTexto(fila[colCedula]) : ''
+    const area = colArea ? leerTexto(fila[colArea]) : null
+    const basico = colBasico ? leerNumero(fila[colBasico]) : 0
+    const transporte = colTransporte ? leerNumero(fila[colTransporte]) : 0
+    const bonos = colBonos ? leerNumero(fila[colBonos]) : 0
+    const prima = colPrima ? leerNumero(fila[colPrima]) : 0
+    const vacaciones = colVacaciones ? leerNumero(fila[colVacaciones]) : 0
+    const prestamo = colPrestamo ? leerNumero(fila[colPrestamo]) : 0
+    const descuento = colDescuento ? leerNumero(fila[colDescuento]) : 0
+    const abonoPrima = colAbonoPrima ? leerNumero(fila[colAbonoPrima]) : 0
+    const cesantias = colCesantias ? leerNumero(fila[colCesantias]) : 0
+    const abonoCesantias = colAbonoCesantias ? leerNumero(fila[colAbonoCesantias]) : 0
+    const abonoLiquidacion = colAbonoLiquidacion ? leerNumero(fila[colAbonoLiquidacion]) : 0
+    const dias = colDias ? leerNumero(fila[colDias]) : 30
+    const netoExplicito = colNeto ? leerNumero(fila[colNeto]) : null
+    const observaciones = colObservaciones ? leerTexto(fila[colObservaciones]) : null
+
+    filas.push({
+      cedula: cedula || `SIN-CEDULA-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+      nombre,
+      area,
+      diasTrabajados: dias || 30,
+      conceptos: {
+        sueldoBase: basico,
+        auxilioTransporte: transporte,
+        bonificaciones: bonos,
+        prima,
+        vacaciones,
+        prestamo,
+        descuento,
+        abonoPrima,
+        cesantias,
+        abonoCesantias,
+        abonoLiquidacion,
+      },
+      netoExplicito: netoExplicito && netoExplicito > 0 ? netoExplicito : null,
+      observaciones,
+    })
+  }
+
+  return filas
+}
+
+// ============================================================
+// GUARDADO EN SUPABASE CON UPSERT REAL
+// ============================================================
+export async function guardarNominaProgramada(
+  filas: any[],
+  userId: string,
+  periodoContable: string
+): Promise<{
   filasInsertadas: number
   filasActualizadas: number
   filasOmitidas: { cedula: string; motivo: string }[]
   alertasUgpp: { nombre: string; excesoLey1393: number }[]
-}
-
-function normalizarEncabezado(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-}
-
-function leerNumero(valor: string | number | undefined): number {
-  if (valor === undefined || valor === null || valor === '') return 0
-  const limpio = typeof valor === 'string' ? valor.replace(/[^0-9.-]/g, '') : valor
-  const num = Number(limpio)
-  return Number.isFinite(num) ? num : 0
-}
-
-export async function parseExcelNomina(archivo: File): Promise<FilaImportada[]> {
-  const buffer = await archivo.arrayBuffer()
-  const libro = XLSX.read(buffer, { type: 'array' })
-  const hoja = libro.Sheets[libro.SheetNames[0]]
-  const filasCrudas: FilaExcelCrudo[] = XLSX.utils.sheet_to_json(hoja, { defval: '' })
-
-  return filasCrudas.map((filaCruda) => {
-    const fila: Record<string, string | number | undefined> = {}
-    for (const [clave, valor] of Object.entries(filaCruda)) {
-      fila[normalizarEncabezado(clave)] = valor
-    }
-
-    const cedula = String(fila['cedula'] ?? fila['cc'] ?? '').trim()
-    const nombre = String(fila['nombre'] ?? fila['nombreempleado'] ?? fila['empleado'] ?? '').trim()
-    const areaCruda = String(fila['area'] ?? '').trim()
-
-    const conceptos: ConceptosNomina = {
-      sueldoBase: leerNumero(fila['sueldobase'] ?? fila['basico'] ?? fila['salario'] ?? fila['salariobase']),
-      auxilioTransporte: leerNumero(fila['transporte'] ?? fila['auxiliotransporte']),
-      bonificaciones: leerNumero(fila['bonos'] ?? fila['bonificaciones'] ?? fila['nosalarial']),
-      prima: leerNumero(fila['prima']),
-      vacaciones: leerNumero(fila['vacaciones']),
-      prestamo: leerNumero(fila['prestamo']),
-      descuento: leerNumero(fila['descuento']),
-      abonoPrima: leerNumero(fila['abonoprima']),
-      cesantias: leerNumero(fila['cesantias']),
-      abonoCesantias: leerNumero(fila['abonocesantias']),
-      abonoLiquidacion: leerNumero(fila['abonoliquidacion'] ?? fila['liquidacion'] ?? fila['pagoliquidacion']),
-    }
-
-    const diasCrudo = fila['diastrabajados'] ?? fila['dias'] ?? fila['diaslaborados'] ?? fila['dias trabajados'] ?? fila['dias laborados'] ?? fila['jornada'] ?? undefined
-    const diasTrabajados = diasCrudo !== undefined && diasCrudo !== '' ? leerNumero(diasCrudo) : null
-
-    const netoCrudo = fila['neto'] ?? fila['netopagar'] ?? fila['netopagado'] ?? 
-  fila['neto pagado'] ?? fila['valorneto'] ?? fila['netodevengado'] ?? 
-  fila['neto devengado'] ?? fila['netoapagar'] ?? fila['neto a pagar'] ?? 
-  fila['pagoneto'] ?? fila['pago neto'] ?? fila['totalapagar'] ?? 
-  fila['total a pagar'] ?? fila['totalneto'] ?? fila['total neto'] ?? 
-  fila['salarioreal'] ?? fila['salario real'] ?? fila['salarioneto'] ?? 
-  fila['salario neto'] ?? undefined
-    const netoExplicito = netoCrudo !== undefined && netoCrudo !== '' ? leerNumero(netoCrudo) : null
-
-    const observacionesCrudo = String(fila['observaciones'] ?? '').trim()
-
-    return {
-      cedula,
-      nombre,
-      area: areaCruda || null,
-      diasTrabajados,
-      conceptos,
-      netoExplicito,
-      observaciones: observacionesCrudo || null,
-    }
-  })
-}
-
-export async function guardarNominaProgramada(
-  filas: FilaImportada[],
-  userId: string,
-  periodoContable: string
-): Promise<ResultadoImportacion> {
-  type FilaExistente = { id: number; cedula: string }
-
-  const { data: existentes, error: errExistentes } = await supabase
-    .from('nomina_programada')
-    .select('id, cedula')
-    .eq('user_id', userId)
-    .eq('periodo_contable', periodoContable)
-    .returns<FilaExistente[]>()
-
-  if (errExistentes) {
-    throw new Error(`No se pudo revisar qué ya existía para este periodo: ${errExistentes.message}`)
-  }
-
-  const idsPorCedula = new Map<string, number[]>()
-  for (const fila of existentes ?? []) {
-    const lista = idsPorCedula.get(fila.cedula.trim()) ?? []
-    lista.push(fila.id)
-    idsPorCedula.set(fila.cedula.trim(), lista)
-  }
-
-  const filasOmitidas: ResultadoImportacion['filasOmitidas'] = []
-  const alertasUgpp: ResultadoImportacion['alertasUgpp'] = []
+}> {
+  const filasOmitidas: { cedula: string; motivo: string }[] = []
+  const alertasUgpp: { nombre: string; excesoLey1393: number }[] = []
   let filasInsertadas = 0
   let filasActualizadas = 0
 
   for (const fila of filas) {
-    if (!fila.cedula || !fila.nombre) {
-      filasOmitidas.push({ cedula: fila.cedula || '(vacía)', motivo: 'Fila sin cédula o sin nombre' })
-      continue
-    }
+    try {
+      const liquidacion = calcularLiquidacion(fila.conceptos)
+      
+      if (liquidacion.alertaRiesgoUgpp) {
+        alertasUgpp.push({ nombre: fila.nombre, excesoLey1393: liquidacion.excesoLey1393 })
+      }
 
-    const liquidacion = calcularLiquidacion(fila.conceptos)
-    if (liquidacion.alertaRiesgoUgpp) {
-      alertasUgpp.push({ nombre: fila.nombre, excesoLey1393: liquidacion.excesoLey1393 })
-    }
+      const netoPagar = fila.netoExplicito ?? liquidacion.netoPagar
 
-    const netoPagar = fila.netoExplicito ?? liquidacion.netoPagar
-
-    const registro = {
-      user_id: userId,
-      nombre_empleado: fila.nombre,
-      cedula: fila.cedula,
-      area: fila.area,
-      sueldo_base: fila.conceptos.sueldoBase,
-      auxilio_transporte: fila.conceptos.auxilioTransporte,
-      dias_trabajados: fila.diasTrabajados ?? 30,
-      bonificaciones: fila.conceptos.bonificaciones,
-      total_devengado: liquidacion.totalDevengado,
-      prima: fila.conceptos.prima,
-      vacaciones: fila.conceptos.vacaciones,
-      prestamo: fila.conceptos.prestamo,
-      descuento: fila.conceptos.descuento,
-      pension: liquidacion.pension,
-      salud: liquidacion.salud,
-      total_deducciones: liquidacion.totalDeducciones,
-      neto_pagar: netoPagar,
-      observaciones: fila.observaciones,
-      estado: 'Pendiente de pago',
-      fecha_carga: new Date().toISOString().slice(0, 10),
-      periodo_contable: periodoContable,
-      abono_prima: fila.conceptos.abonoPrima,
-      cesantias: fila.conceptos.cesantias,
-      abono_cesantias: fila.conceptos.abonoCesantias,
-      abono_liquidacion: fila.conceptos.abonoLiquidacion,
-      cuenta_puc_basico: CUENTAS_PUC_NOMINA.basico,
-      cuenta_puc_transporte: CUENTAS_PUC_NOMINA.transporte,
-      cuenta_puc_bonos: CUENTAS_PUC_NOMINA.bonos,
-      cuenta_puc_prima: CUENTAS_PUC_NOMINA.prima,
-      exceso_ley_1393: liquidacion.excesoLey1393,
-      alerta_riesgo_ugpp: liquidacion.alertaRiesgoUgpp,
-    }
-
-    const idsExistentes = idsPorCedula.get(fila.cedula.trim()) ?? []
-
-    if (idsExistentes.length > 1) {
-      filasOmitidas.push({
+      const registro = {
+        user_id: userId,
+        nombre_empleado: fila.nombre,
         cedula: fila.cedula,
-        motivo: `Ya hay ${idsExistentes.length} registros de esta cédula en este periodo; revísalo manualmente antes de importar`,
-      })
-      continue
-    }
+        area: fila.area || null,
+        sueldo_base: fila.conceptos.sueldoBase,
+        auxilio_transporte: fila.conceptos.auxilioTransporte,
+        dias_trabajados: fila.diasTrabajados ?? 30,
+        bonificaciones: fila.conceptos.bonificaciones,
+        total_devengado: liquidacion.totalDevengado,
+        prima: fila.conceptos.prima,
+        vacaciones: fila.conceptos.vacaciones,
+        prestamo: fila.conceptos.prestamo,
+        descuento: fila.conceptos.descuento,
+        pension: liquidacion.pension,
+        salud: liquidacion.salud,
+        total_deducciones: liquidacion.totalDeducciones,
+        neto_pagar: netoPagar,
+        observaciones: fila.observaciones || null,
+        estado: 'Pendiente de Pago',
+        fecha_carga: new Date().toISOString().slice(0, 10),
+        periodo_contable: periodoContable,
+        abono_prima: fila.conceptos.abonoPrima,
+        cesantias: fila.conceptos.cesantias,
+        abono_cesantias: fila.conceptos.abonoCesantias,
+        abono_liquidacion: fila.conceptos.abonoLiquidacion,
+        cuenta_puc_basico: CUENTAS_PUC_NOMINA.basico,
+        cuenta_puc_transporte: CUENTAS_PUC_NOMINA.transporte,
+        cuenta_puc_bonos: CUENTAS_PUC_NOMINA.bonos,
+        cuenta_puc_prima: CUENTAS_PUC_NOMINA.prima,
+        exceso_ley_1393: liquidacion.excesoLey1393,
+        alerta_riesgo_ugpp: liquidacion.alertaRiesgoUgpp,
+      }
 
-    if (idsExistentes.length === 1) {
-      const { error: errUpdate } = await supabase.from('nomina_programada').update(registro).eq('id', idsExistentes[0])
-      if (errUpdate) {
-        filasOmitidas.push({ cedula: fila.cedula, motivo: `Error actualizando: ${errUpdate.message}` })
-        continue
+      // Buscar si ya existe este empleado en este periodo
+      const { data: existente } = await supabase
+        .from('nomina_programada')
+        .select('id, estado')
+        .eq('user_id', userId)
+        .eq('cedula', fila.cedula)
+        .eq('periodo_contable', periodoContable)
+        .maybeSingle()
+
+      if (existente) {
+        // Ya existe — actualizar sin cambiar el estado si ya está Pagado
+        const estadoFinal = existente.estado === 'Pagado' ? 'Pagado' : 'Pendiente de Pago'
+        const { error } = await supabase
+          .from('nomina_programada')
+          .update({ ...registro, estado: estadoFinal })
+          .eq('id', existente.id)
+        
+        if (error) {
+          filasOmitidas.push({ cedula: fila.cedula, motivo: `Error actualizando: ${error.message}` })
+        } else {
+          filasActualizadas++
+        }
+      } else {
+        // No existe — insertar
+        const { error } = await supabase
+          .from('nomina_programada')
+          .insert(registro)
+        
+        if (error) {
+          filasOmitidas.push({ cedula: fila.cedula, motivo: `Error insertando: ${error.message}` })
+        } else {
+          filasInsertadas++
+        }
       }
-      filasActualizadas++
-    } else {
-      const { error: errInsert } = await supabase.from('nomina_programada').insert(registro)
-      if (errInsert) {
-        filasOmitidas.push({ cedula: fila.cedula, motivo: `Error insertando: ${errInsert.message}` })
-        continue
-      }
-      filasInsertadas++
+    } catch (err: any) {
+      filasOmitidas.push({ cedula: fila.cedula, motivo: `Error procesando: ${err.message}` })
     }
   }
 
