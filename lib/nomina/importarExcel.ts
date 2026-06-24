@@ -92,10 +92,16 @@ export async function parseExcelNomina(archivo: File): Promise<FilaImportada[]> 
       abonoLiquidacion: leerNumero(fila['abonoliquidacion'] ?? fila['liquidacion'] ?? fila['pagoliquidacion']),
     }
 
-    const diasCrudo = fila['diastrabajados'] ?? fila['dias']
+    const diasCrudo = fila['diastrabajados'] ?? fila['dias'] ?? fila['diaslaborados'] ?? fila['dias trabajados'] ?? fila['dias laborados'] ?? fila['jornada'] ?? undefined
     const diasTrabajados = diasCrudo !== undefined && diasCrudo !== '' ? leerNumero(diasCrudo) : null
 
-    const netoCrudo = fila['neto'] ?? fila['netopagar'] ?? fila['valorneto']
+    const netoCrudo = fila['neto'] ?? fila['netopagar'] ?? fila['netopagado'] ?? 
+  fila['neto pagado'] ?? fila['valorneto'] ?? fila['netodevengado'] ?? 
+  fila['neto devengado'] ?? fila['netoapagar'] ?? fila['neto a pagar'] ?? 
+  fila['pagoneto'] ?? fila['pago neto'] ?? fila['totalapagar'] ?? 
+  fila['total a pagar'] ?? fila['totalneto'] ?? fila['total neto'] ?? 
+  fila['salarioreal'] ?? fila['salario real'] ?? fila['salarioneto'] ?? 
+  fila['salario neto'] ?? undefined
     const netoExplicito = netoCrudo !== undefined && netoCrudo !== '' ? leerNumero(netoCrudo) : null
 
     const observacionesCrudo = String(fila['observaciones'] ?? '').trim()
