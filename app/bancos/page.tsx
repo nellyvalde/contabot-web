@@ -97,6 +97,7 @@ export default function BancosPage() {
       }
 
       setMovimientos(movs)
+      console.log('Primeros 3 movimientos:', JSON.stringify(movs.slice(0,3)))
       setMensaje(`Se encontraron ${movs.length} movimientos. Cruzando con documentos...`)
       await cruzarConDocumentos(movs)
       setPaso('revisar')
