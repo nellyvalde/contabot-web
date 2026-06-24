@@ -177,10 +177,9 @@ export default function BancosPage() {
 }
 
       const valorLimpio = valorTexto
-        .replace(/\$/g, '')
-        .replace(/\./g, '')
-        .replace(',', '.')
-        .trim()
+  .replace(/\$/g, '')
+  .replace(/,/g, '')
+  .trim()
 
       const montoFinal = parseFloat(valorLimpio) || 0
       console.log('Valor convertido final:', montoFinal, '| Texto:', valorTexto)
