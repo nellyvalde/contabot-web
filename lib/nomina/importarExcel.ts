@@ -1,4 +1,4 @@
-// lib/nomina/importarExcel.ts
+﻿// lib/nomina/importarExcel.ts
 // Normalizador Semantico Inteligente para importacion de nomina
 // Compatible con cualquier formato de Excel colombiano
 
@@ -218,7 +218,7 @@ export async function guardarNominaProgramada(
     try {
       const liquidacion = liquidarNomina(fila.conceptos)
       
-      if (liquidacion.alertaRiesgoUgpp) {
+      if (liquidacion.excesoLey1393 > 0) {
         alertasUgpp.push({ nombre: fila.nombre, excesoLey1393: liquidacion.excesoLey1393 })
       }
 
@@ -255,7 +255,7 @@ export async function guardarNominaProgramada(
         cuenta_puc_bonos: CUENTAS_PUC_NOMINA.bonos,
         cuenta_puc_prima: CUENTAS_PUC_NOMINA.prima,
         exceso_ley_1393: liquidacion.excesoLey1393,
-        alerta_riesgo_ugpp: liquidacion.alertaRiesgoUgpp,
+        alerta_riesgo_ugpp: liquidacion.excesoLey1393 > 0,
       }
 
       // Buscar si ya existe este empleado en este periodo
@@ -268,7 +268,7 @@ export async function guardarNominaProgramada(
         .maybeSingle()
 
       if (existente) {
-        // Ya existe — actualizar sin cambiar el estado si ya está Pagado
+        // Ya existe â€” actualizar sin cambiar el estado si ya estÃ¡ Pagado
         const estadoFinal = existente.estado === 'Pagado' ? 'Pagado' : 'Pendiente de Pago'
         const { error } = await supabase
           .from('nomina_programada')
@@ -281,7 +281,7 @@ export async function guardarNominaProgramada(
           filasActualizadas++
         }
       } else {
-        // No existe — insertar
+        // No existe â€” insertar
         const { error } = await supabase
           .from('nomina_programada')
           .insert(registro)
