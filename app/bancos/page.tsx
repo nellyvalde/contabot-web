@@ -108,7 +108,7 @@ export default function BancosPage() {
     setProcesando(false)
   }
 
-  const leerPDF = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
+ const leerPDF = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
   const pdfjsLib = await import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
   const arrayBuffer = await file.arrayBuffer()
@@ -120,52 +120,64 @@ export default function BancosPage() {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
 
-    // Agrupar items por linea (coordenada Y similar)
-    const lineas: Record<number, any[]> = {}
+    const lineas: Record<number, { str: string; x: number }[]> = {}
     for (const item of content.items as any[]) {
-      const y = Math.round(item.transform[5])
+      const y = Math.round(item.transform[5] / 2) * 2
+      const x = item.transform[4]
       if (!lineas[y]) lineas[y] = []
-      lineas[y].push(item)
+      if (item.str.trim()) lineas[y].push({ str: item.str, x })
     }
 
-    // Ordenar lineas de arriba a abajo
     const ysOrdenados = Object.keys(lineas).map(Number).sort((a, b) => b - a)
 
     for (const y of ysOrdenados) {
-      // Ordenar items de izquierda a derecha dentro de cada linea
-      const itemsLinea = lineas[y].sort((a: any, b: any) => a.transform[4] - b.transform[4])
-      const textos = itemsLinea.map((item: any) => item.str.trim()).filter(Boolean)
+      const itemsLinea = lineas[y].sort((a, b) => a.x - b.x)
+      const textos = itemsLinea.map(item => item.str.trim()).filter(Boolean)
 
       if (textos.length < 2) continue
+      if (!regexFecha.test(textos[0].trim())) continue
 
-      // Primera columna debe ser fecha
-      if (!regexFecha.test(textos[0])) continue
+      const fecha = parsearFecha(textos[0].trim(), config.formatoFecha)
+      console.log('Texto original capturado:', textos.join(' '))
 
-      const fecha = parsearFecha(textos[0], config.formatoFecha)
-
-      // Ultima columna suele ser saldo, penultima es valor
-      // Buscar el valor: texto que empiece con $ o sea numero
       const partesDesc: string[] = []
-let valorTexto = ''
-let ultimoEraNumero = false
+      const gruposNumericos: string[] = []
+      let grupoActual = ''
 
-for (let j = 1; j < textos.length; j++) {
-  const t = textos[j].replace(/\s/g, '')
-  const esNumero = /^\$?[\d.,]+$/.test(t)
-  if (esNumero) {
-    valorTexto += t.replace('$', '')
-    ultimoEraNumero = true
-  } else {
-    if (ultimoEraNumero) valorTexto = ''
-    ultimoEraNumero = false
-    partesDesc.push(textos[j])
-  }
-}
+      for (let j = 1; j < textos.length; j++) {
+        const t = textos[j].trim()
+        const esFragmentoNumerico = /^[\$\d.,]+$/.test(t.replace(/\s/g, ''))
+        if (esFragmentoNumerico) {
+          grupoActual += t.replace(/\s/g, '')
+        } else {
+          if (grupoActual) {
+            gruposNumericos.push(grupoActual)
+            grupoActual = ''
+          }
+          partesDesc.push(t)
+        }
+      }
+      if (grupoActual) gruposNumericos.push(grupoActual)
 
-const descripcion = partesDesc.join(' ')
-valor = parsearValor(valorTexto || '0', config)
+      const descripcion = partesDesc.join(' ')
 
-      if (fecha && valor > 0) movs.push({ fecha, descripcion, valor })
+      let valorTexto = ''
+      if (gruposNumericos.length >= 2) {
+        valorTexto = gruposNumericos[gruposNumericos.length - 2]
+      } else if (gruposNumericos.length === 1) {
+        valorTexto = gruposNumericos[0]
+      }
+
+      const valorLimpio = valorTexto
+        .replace(/\$/g, '')
+        .replace(/\./g, '')
+        .replace(',', '.')
+        .trim()
+
+      const montoFinal = parseFloat(valorLimpio) || 0
+      console.log('Valor convertido final:', montoFinal, '| Texto:', valorTexto)
+
+      if (fecha && montoFinal > 0) movs.push({ fecha, descripcion, valor: montoFinal })
     }
   }
 
