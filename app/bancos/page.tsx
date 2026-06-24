@@ -143,6 +143,8 @@ export default function BancosPage() {
       setMovimientos(movs)
       console.log('Primeros 3 movimientos:', JSON.stringify(movs.slice(0,3)))
       setMensaje(`Se encontraron ${movs.length} movimientos. Cruzando con documentos...`)
+      // Limpiar conciliacion anterior antes de guardar la nueva
+await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).neq('estado', 'confirmado')
       await cruzarConDocumentos(movs)
       setPaso('revisar')
     } catch (err: any) {
@@ -400,15 +402,10 @@ export default function BancosPage() {
                   ✔️ Confirmados: {resultados.filter(r => r.estadoCruce === 'confirmado').length}
                 </span>
               </div>
-              <button onClick={async () => {
-              if (confirm('¿Deseas limpiar la conciliacion actual y subir un nuevo extracto? Los registros confirmados se conservaran.')) {
-              await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).neq('estado', 'confirmado')
-              setPaso('subir')
-              setResultados([])
-              setMovimientos([])
-             setMensaje('')
-             }
-             }}
+              <button onClick={() => {
+  setPaso('subir')
+  setMensaje('')
+}}
                 className="text-sm text-slate-500 hover:text-slate-700 underline">
                 Subir otro extracto
               </button>
