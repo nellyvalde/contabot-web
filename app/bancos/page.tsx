@@ -55,7 +55,7 @@ export default function BancosPage() {
   const [procesando, setProcesando] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [paso, setPaso] = useState<'subir' | 'revisar'>('subir')
-
+const [mostrarSubida, setMostrarSubida] = useState(false)
   useEffect(() => {
   supabase.auth.getUser().then(async ({ data }) => {
     if (!data.user) window.location.href = '/'
@@ -147,6 +147,7 @@ export default function BancosPage() {
 await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).neq('estado', 'confirmado')
       await cruzarConDocumentos(movs)
       setPaso('revisar')
+      setMostrarSubida(false)
     } catch (err: any) {
       setMensaje('Error leyendo el archivo: ' + err.message)
     }
@@ -364,7 +365,7 @@ await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Conciliacion Bancaria</h2>
         <p className="text-slate-500 text-sm mb-6">Cruza tu extracto bancario con los documentos y nomina registrados en ContaBot</p>
 
-        {paso === 'subir' && (
+        {(paso === 'subir' || mostrarSubida) && (
           <div className="bg-white rounded-2xl p-8 shadow-sm">
             <div className="mb-6">
               <label className="block text-sm font-medium text-slate-700 mb-2">Banco</label>
@@ -403,7 +404,7 @@ await supabase.from('conciliaciones_bancarias').delete().eq('user_id', user.id).
                 </span>
               </div>
               <button onClick={() => {
-  setPaso('subir')
+  setMostrarSubida(true)
   setMensaje('')
 }}
                 className="text-sm text-slate-500 hover:text-slate-700 underline">
