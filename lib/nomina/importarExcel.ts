@@ -177,3 +177,4 @@ export async function guardarNominaProgramada(
   }
   return { filasInsertadas, filasActualizadas, filasOmitidas, alertasUgpp }
 }
+
