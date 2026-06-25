@@ -1,5 +1,5 @@
 ﻿// lib/nomina/importarExcel.ts
-// Normalizador Semantico Inteligente para importacion de nomina
+// Normalizador Semantico Inteligente para importacion de nomina v2
 // Compatible con cualquier formato de Excel colombiano
 
 import * as XLSX from 'xlsx'
@@ -329,6 +329,7 @@ export async function guardarNominaProgramada(
 
   return { filasInsertadas, filasActualizadas, filasOmitidas, alertasUgpp }
 }
+
 
 
 
