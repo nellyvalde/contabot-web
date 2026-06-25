@@ -24,10 +24,10 @@ function detectarColumna(encabezados: string[], palabrasClave: string[]): string
 
 function leerNumero(valor: any): number {
   if (valor === undefined || valor === null || valor === '') return 0
-  const str = String(valor)
-    .replace(/\$/g, '').replace(/\s/g, '')
-    .replace(/\./g, '').replace(',', '.').trim()
-  return parseFloat(str) || 0
+  if (typeof valor === 'number') return Math.round(Math.abs(valor))
+  const soloDigitos = String(valor).replace(/[^0-9]/g, '')
+  if (!soloDigitos) return 0
+  return parseInt(soloDigitos, 10)
 }
 
 function leerTexto(valor: any): string {
@@ -329,6 +329,7 @@ export async function guardarNominaProgramada(
 
   return { filasInsertadas, filasActualizadas, filasOmitidas, alertasUgpp }
 }
+
 
 
 
