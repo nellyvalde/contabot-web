@@ -1,5 +1,5 @@
 ﻿// lib/nomina/importarExcel.ts
-// Normalizador Semantico Inteligente para importacion de nomina v3
+// Normalizador Semantico Inteligente para importacion de nomina v4
 
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
@@ -166,3 +166,4 @@ export async function guardarNominaProgramada(filas: any[], userId: string, peri
   }
   return { filasInsertadas, filasActualizadas, filasOmitidas, alertasUgpp }
 }
+
