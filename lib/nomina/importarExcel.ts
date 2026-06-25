@@ -1,4 +1,4 @@
-// lib/nomina/importarExcel.ts
+﻿// lib/nomina/importarExcel.ts
 // Normalizador Semantico Inteligente para importacion de nomina
 // Compatible con cualquier formato de Excel colombiano
 
@@ -55,7 +55,7 @@ function encontrarFilaCabecera(filas: any[][]): number {
       .join(' ')
 
     const coincidencias = PALABRAS_CABECERA.filter(p => textoConcatenado.includes(p))
-    if (coincidencias.length >= 2) {
+    if (coincidencias.length >= 3) {
       console.log(`[ContaBot] Encabezados detectados en fila ${i + 1}:`, coincidencias)
       return i
     }
@@ -329,3 +329,4 @@ export async function guardarNominaProgramada(
 
   return { filasInsertadas, filasActualizadas, filasOmitidas, alertasUgpp }
 }
+
