@@ -151,6 +151,21 @@ function NominaContenido() {
     finally { setConciliando(false) }
   }
 
+  async function limpiarDatosDelMes() {
+    if (!user?.id) return
+    const confirmar = window.confirm(`¿Seguro que deseas eliminar todos los registros de nomina de ${NOMBRES_MES[periodoMes-1]} ${periodoAnio}? Esta accion no borra empleados y no se puede deshacer.`)
+    if (!confirmar) return
+    const { error: e } = await supabase
+      .from('nomina_programada')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('periodo_contable', periodoContable)
+    if (e) { setError(`Error al limpiar: ${e.message}`); return }
+    setNominaProgramada([])
+    setMensajeImportacion('Datos del mes eliminados correctamente.')
+    setMensajeConciliacion(null)
+  }
+
   async function togglePagoManual(id: number) {
     const f=nominaProgramada.find(f=>f.id===id); if (!f) return
     const nuevo: EstadoPago=f.estado==='Pagado'?'Pendiente de Pago':'Pagado'
@@ -204,6 +219,9 @@ function NominaContenido() {
                   <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Año</label>
                   <input type="number" value={periodoAnio} onChange={e=>setPeriodoAnio(Number(e.target.value))} className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"/>
                 </div>
+                <button onClick={limpiarDatosDelMes} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-red-600 border border-red-200 bg-white shadow-sm hover:bg-red-50 active:scale-[0.98] transition-all whitespace-nowrap">
+                  ✕ Limpiar datos del mes
+                </button>
                 <label className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-sm cursor-pointer transition-all active:scale-[0.98] ${importando?'bg-emerald-400':'bg-emerald-600 hover:bg-emerald-700'}`}>
                   {importando?<><span className="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"/>Importando...</>:<>↑ Importar Excel</>}
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={manejarImportacionExcel} disabled={importando||!user?.id} className="hidden"/>
@@ -303,3 +321,5 @@ function NominaContenido() {
     </div>
   )
 }
+
+
