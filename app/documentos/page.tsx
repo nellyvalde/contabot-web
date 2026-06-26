@@ -77,8 +77,6 @@ function DocumentosContenido() {
       return
     }
 
-    setEmpresaId(empresa.id)
-
     const { data, error: errDocs } = await supabase
       .from('documentos')
       .select('id, tipo, numero_documento, fecha_emision, valor, cuenta_puc, estado_conciliacion')
@@ -331,5 +329,6 @@ function DocumentosContenido() {
     </div>
   )
 }
+
 
 
