@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const SECRET = 'sodeportc_secret_2026'
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Buscar empresa
     const { data: empresa } = await supabase
-      .from('empresas')
+      .from('contabot_empresas')
       .select('user_id')
       .eq('correo', 'asistenciasodeportc@gmail.com')
       .single()
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
               type: 'text',
               text: `Eres un auxiliar contable colombiano experto.
 La empresa es SODEPORTC SAS NIT 901183507.
-Analiza este documento y responde ÚNICAMENTE con JSON válido sin texto adicional ni backticks:
+Analiza este documento y responde ÃšNICAMENTE con JSON vÃ¡lido sin texto adicional ni backticks:
 {
   "categoria": "uno de: Factura de Venta | Factura de Compra | Gasto | Comprobante de Nomina | Extracto Bancario | Desconocido",
   "proveedor": "nombre completo de la contraparte, banco o beneficiario. Si no se puede identificar escribe null",
@@ -104,7 +104,7 @@ Reglas ESTRICTAS:
       datos = { categoria: 'Desconocido', confianza: 'baja' }
     }
 
-    // VALIDACIÓN: si no tiene proveedor ni valor, va a docs_por_clasificar
+    // VALIDACIÃ“N: si no tiene proveedor ni valor, va a docs_por_clasificar
     if (!datos.proveedor && (!datos.valor || datos.valor === 0)) {
       await supabase.from('docs_por_clasificar').insert({
         user_id: userId,
@@ -118,21 +118,21 @@ Reglas ESTRICTAS:
       return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'sin datos' })
     }
 
-    // VALIDACIÓN: confianza baja va a docs_por_clasificar
+    // VALIDACIÃ“N: confianza baja va a docs_por_clasificar
     if (datos.confianza === 'baja' || datos.categoria === 'Desconocido') {
       await supabase.from('docs_por_clasificar').insert({
         user_id: userId,
         nombre_archivo: nombre || datos.proveedor || 'Sin nombre',
         remitente: remitente || 'Desconocido',
         fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
-        razon: `Clasificación incierta: ${datos.categoria}`,
+        razon: `ClasificaciÃ³n incierta: ${datos.categoria}`,
         categoria_sugerida: datos.categoria || 'Desconocido',
         archivo_data: archivo || null,
       })
       return NextResponse.json({ success: true, ruta: 'docs_por_clasificar', razon: 'confianza baja' })
     }
 
-    // RUTA NÓMINA: Comprobante de pago bancario a empleado
+    // RUTA NÃ“MINA: Comprobante de pago bancario a empleado
     if (datos.categoria === 'Comprobante de Nomina') {
       const valorBuscado = datos.valor || 0
       const nombreBeneficiario = datos.proveedor?.toUpperCase() || ''
@@ -157,7 +157,7 @@ Reglas ESTRICTAS:
         empleadoMatch = empData
       }
 
-      // Si no encontró por alterno, buscar por nombre directo
+      // Si no encontrÃ³ por alterno, buscar por nombre directo
       if (!empleadoMatch) {
         const { data: empDirect } = await supabase
           .from('nomina_programada')
@@ -168,7 +168,7 @@ Reglas ESTRICTAS:
         empleadoMatch = empDirect
       }
 
-      // Si no encontró por nombre, buscar por valor
+      // Si no encontrÃ³ por nombre, buscar por valor
       if (!empleadoMatch && valorBuscado > 0) {
         const { data: empValor } = await supabase
           .from('nomina_programada')
@@ -194,13 +194,13 @@ Reglas ESTRICTAS:
           empleado: empleadoMatch.nombre_empleado 
         })
       } else {
-        // No encontró empleado — va a docs_por_clasificar
+        // No encontrÃ³ empleado â€” va a docs_por_clasificar
         await supabase.from('docs_por_clasificar').insert({
           user_id: userId,
           nombre_archivo: nombre || datos.proveedor,
           remitente: remitente || datos.proveedor,
           fecha_correo: fecha_correo || new Date().toISOString().slice(0, 10),
-          razon: `Comprobante de nómina — empleado no encontrado: ${datos.proveedor}`,
+          razon: `Comprobante de nÃ³mina â€” empleado no encontrado: ${datos.proveedor}`,
           categoria_sugerida: 'Comprobante de Nomina',
           archivo_data: archivo || null,
         })
@@ -208,7 +208,7 @@ Reglas ESTRICTAS:
       }
     }
 
-    // RUTA DOCUMENTOS: Facturas y gastos válidos
+    // RUTA DOCUMENTOS: Facturas y gastos vÃ¡lidos
     await supabase.from('facturas').insert({
       user_id: userId,
       proveedor: datos.proveedor || remitente || 'Sin nombre',
@@ -229,3 +229,4 @@ Reglas ESTRICTAS:
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
