@@ -1,23 +1,24 @@
-'use client'
+﻿'use client'
 // components/Sidebar.tsx
 // Barra lateral compartida por todas las paginas.
 
 import Link from 'next/link'
+import SelectorEmpresa from '@/components/SelectorEmpresa'
 import { usePathname, useSearchParams } from 'next/navigation'
 
 const menuItems = [
-  { id: 'dashboard',     icon: '📊', label: 'Dashboard',          href: '/dashboard' },
-  { id: 'documentos',    icon: '📄', label: 'Documentos',         href: '/documentos' },
-  { id: 'nomina',        icon: '🧾', label: 'Nomina',             href: '/nomina' },
-  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar', href: '/cobrar' },
-  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar',  href: '/pagar' },
-  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas',  href: '/alertas' },
-  { id: 'revision',      icon: '🤖', label: 'Revision IA',        href: '/documentos?vista=revision' },
-  { id: 'clientes',      icon: '👥', label: 'Clientes',           href: '/clientes' },
-  { id: 'proveedores',   icon: '🏭', label: 'Proveedores',        href: '/dashboard?seccion=proveedores' },
-  { id: 'bancos',        icon: '🏦', label: 'Conciliacion Bancaria', href: '/bancos' },
-  { id: 'reportes',      icon: '📈', label: 'Reportes',           href: '/reportes' },
-  { id: 'configuracion', icon: '⚙️', label: 'Configuracion',      href: '/configuracion' },
+  { id: 'dashboard',     icon: 'ðŸ“Š', label: 'Dashboard',          href: '/dashboard' },
+  { id: 'documentos',    icon: 'ðŸ“„', label: 'Documentos',         href: '/documentos' },
+  { id: 'nomina',        icon: 'ðŸ§¾', label: 'Nomina',             href: '/nomina' },
+  { id: 'cobrar',        icon: 'ðŸ’°', label: 'Cuentas por Cobrar', href: '/cobrar' },
+  { id: 'pagar',         icon: 'ðŸ’³', label: 'Cuentas por Pagar',  href: '/pagar' },
+  { id: 'alertas',       icon: 'âš ï¸', label: 'Centro de Alertas',  href: '/alertas' },
+  { id: 'revision',      icon: 'ðŸ¤–', label: 'Revision IA',        href: '/documentos?vista=revision' },
+  { id: 'clientes',      icon: 'ðŸ‘¥', label: 'Clientes',           href: '/clientes' },
+  { id: 'proveedores',   icon: 'ðŸ­', label: 'Proveedores',        href: '/dashboard?seccion=proveedores' },
+  { id: 'bancos',        icon: 'ðŸ¦', label: 'Conciliacion Bancaria', href: '/bancos' },
+  { id: 'reportes',      icon: 'ðŸ“ˆ', label: 'Reportes',           href: '/reportes' },
+  { id: 'configuracion', icon: 'âš™ï¸', label: 'Configuracion',      href: '/configuracion' },
 ]
 
 type SidebarProps = {
@@ -27,6 +28,7 @@ type SidebarProps = {
 }
 
 export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps) {
+  // SelectorEmpresa se renderiza dentro del sidebar
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -51,7 +53,7 @@ if (pathname === '/dashboard') return 'dashboard'
     <aside className="w-64 bg-slate-900 text-white flex flex-col fixed h-full z-10">
       <div className="px-6 py-5 border-b border-slate-700">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">📊</div>
+          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">ðŸ“Š</div>
           <div>
             <h1 className="font-bold text-white text-sm">ContaBot</h1>
             <p className="text-slate-400 text-xs">Auxiliar Contable IA</p>
@@ -92,3 +94,4 @@ if (pathname === '/dashboard') return 'dashboard'
     </aside>
   )
 }
+
