@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -32,7 +32,7 @@ export default function AdminPanel() {
 
   const cargarEmpresas = async () => {
     const { data } = await supabase
-      .from('empresas')
+      .from('contabot_empresas')
       .select('*')
       .order('created_at', { ascending: false })
     if (data) setEmpresas(data)
@@ -77,7 +77,7 @@ export default function AdminPanel() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-slate-800 text-white px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">📊</div>
+          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">ðŸ“Š</div>
           <div>
             <h1 className="font-bold text-white">ContaBot</h1>
             <p className="text-slate-400 text-xs">Panel de Administrador</p>
@@ -169,7 +169,7 @@ export default function AdminPanel() {
         <div className="bg-white rounded-2xl shadow-sm">
           {empresas.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
-              <p className="text-4xl mb-3">🏢</p>
+              <p className="text-4xl mb-3">ðŸ¢</p>
               <p className="font-medium">No hay empresas registradas</p>
               <p className="text-sm mt-1">Crea la primera empresa con el boton de arriba</p>
             </div>
@@ -208,4 +208,5 @@ export default function AdminPanel() {
     </div>
   )
 }
+
 
