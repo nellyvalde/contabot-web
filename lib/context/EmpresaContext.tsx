@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { useUser } from '@/lib/hooks/useUser'
 
 export type Empresa = {
   id: string
@@ -26,33 +25,51 @@ const EmpresaContext = createContext<EmpresaContextType>({
 })
 
 export function EmpresaProvider({ children }: { children: ReactNode }) {
-  const { user } = useUser()
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresaActiva, setEmpresaActivaState] = useState<Empresa | null>(null)
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
-    if (!user?.id) return
     cargarEmpresas()
-  }, [user?.id])
+  }, [])
 
   async function cargarEmpresas() {
     setCargando(true)
-    const { data, error } = await supabase
-      .from('usuarios_empresas')
-      .select('empresa_id, contabot_empresas (id, nit, razon_social, regimen_tributario)')
-      .eq('user_id', user!.id)
-      .eq('activo', true)
+    try {
+      // Obtener sesion actual
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user?.id) { setCargando(false); return }
 
-    if (error || !data) { setCargando(false); return }
+      // Query 1: obtener empresa_ids del usuario
+      const { data: rels, error: e1 } = await supabase
+        .from('usuarios_empresas')
+        .select('empresa_id')
+        .eq('user_id', session.user.id)
+        .eq('activo', true)
 
-    const lista: Empresa[] = data.map((row: any) => row.contabot_empresas).filter(Boolean)
-    setEmpresas(lista)
+      if (e1 || !rels || rels.length === 0) { setCargando(false); return }
 
-    const guardada = localStorage.getItem('contabot_empresa_activa')
-    const encontrada = guardada ? lista.find(e => e.id === guardada) : null
-    setEmpresaActivaState(encontrada ?? lista[0] ?? null)
-    setCargando(false)
+      const ids = rels.map((r: any) => r.empresa_id)
+
+      // Query 2: obtener datos de esas empresas
+      const { data: emps, error: e2 } = await supabase
+        .from('contabot_empresas')
+        .select('id, nit, razon_social, regimen_tributario')
+        .in('id', ids)
+
+      if (e2 || !emps) { setCargando(false); return }
+
+      setEmpresas(emps)
+
+      // Restaurar empresa activa desde localStorage
+      const guardada = localStorage.getItem('contabot_empresa_activa')
+      const encontrada = guardada ? emps.find((e: Empresa) => e.id === guardada) : null
+      setEmpresaActivaState(encontrada ?? emps[0] ?? null)
+    } catch (err) {
+      console.error('Error cargando empresas:', err)
+    } finally {
+      setCargando(false)
+    }
   }
 
   function setEmpresaActiva(empresa: Empresa) {
