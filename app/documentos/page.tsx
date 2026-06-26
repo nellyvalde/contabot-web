@@ -1,14 +1,15 @@
-'use client'
+﻿'use client'
 // app/documentos/page.tsx
 //
-// Registro y conciliación de documentos soporte (facturas, comprobantes).
-// Esta versión permite registrar el documento y su metadato contable
-// (tipo, valor, cuenta PUC) manualmente. La carga del archivo físico a
-// Supabase Storage y la extracción automática por OCR quedan marcadas
+// Registro y conciliaciÃ³n de documentos soporte (facturas, comprobantes).
+// Esta versiÃ³n permite registrar el documento y su metadato contable
+// (tipo, valor, cuenta PUC) manualmente. La carga del archivo fÃ­sico a
+// Supabase Storage y la extracciÃ³n automÃ¡tica por OCR quedan marcadas
 // como siguiente paso (ver comentarios "TODO") para no fingir una
-// integración que aún no existe.
+// integraciÃ³n que aÃºn no existe.
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { useUser } from '@/lib/hooks/useUser'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase/client'
@@ -29,7 +30,7 @@ type Documento = {
 const ETIQUETAS_TIPO: Record<TipoDocumento, string> = {
   factura_venta: 'Factura de venta',
   factura_compra: 'Factura de compra',
-  soporte_nomina: 'Soporte de nómina',
+  soporte_nomina: 'Soporte de nÃ³mina',
   comprobante_egreso: 'Comprobante de egreso',
   otro: 'Otro',
 }
@@ -44,8 +45,9 @@ export default function DocumentosPage() {
 
 function DocumentosContenido() {
   const { user, handleLogout } = useUser()
+  const { empresaActiva } = useEmpresa()
 
-  const [empresaId, setEmpresaId] = useState<string | null>(null)
+  const empresaId = empresaActiva?.id ?? null
   const [documentos, setDocumentos] = useState<Documento[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -57,9 +59,7 @@ function DocumentosContenido() {
   const [valor, setValor] = useState('')
   const [cuentaPuc, setCuentaPuc] = useState('')
 
-  useEffect(() => {
-    cargarDocumentos()
-  }, [])
+  useEffect(() => { if (empresaActiva?.id) cargarDocumentos() }, [empresaActiva?.id])
 
   async function cargarDocumentos() {
     setCargando(true)
@@ -72,7 +72,7 @@ function DocumentosContenido() {
       .single()
 
     if (errEmpresa || !empresa) {
-      setError('No se encontró ninguna empresa registrada en Supabase.')
+      setError('No se encontrÃ³ ninguna empresa registrada en Supabase.')
       setCargando(false)
       return
     }
@@ -112,9 +112,9 @@ function DocumentosContenido() {
   async function registrarDocumento() {
     if (!empresaId || !numero.trim() || !valor.trim()) return
 
-    // TODO: aquí se debe subir el archivo real a Supabase Storage y guardar
+    // TODO: aquÃ­ se debe subir el archivo real a Supabase Storage y guardar
     // su URL en `archivo_url`, y opcionalmente enviarlo a un servicio de
-    // OCR/parseo para llenar `texto_extraido` automáticamente.
+    // OCR/parseo para llenar `texto_extraido` automÃ¡ticamente.
     const { data, error: errInsert } = await supabase
       .from('documentos')
       .insert({
@@ -171,7 +171,7 @@ function DocumentosContenido() {
           <section className="rounded-3xl bg-white p-8 shadow-sm border border-slate-200">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-sm text-slate-500">Conciliación contable</p>
+                <p className="text-sm text-slate-500">ConciliaciÃ³n contable</p>
                 <h1 className="text-3xl font-semibold text-slate-900">Documentos soporte</h1>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -218,22 +218,22 @@ function DocumentosContenido() {
                     <thead className="bg-slate-50">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">N° documento</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">NÂ° documento</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Valor</th>
                         <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Cuenta PUC</th>
                         <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Acción</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">AcciÃ³n</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {documentosFiltrados.map((doc) => (
                         <tr key={doc.id}>
                           <td className="px-4 py-4 text-slate-700">{ETIQUETAS_TIPO[doc.tipo]}</td>
-                          <td className="px-4 py-4 text-slate-700">{doc.numero_documento ?? '—'}</td>
+                          <td className="px-4 py-4 text-slate-700">{doc.numero_documento ?? 'â€”'}</td>
                           <td className="px-4 py-4 text-right text-slate-900 font-semibold">
                             ${Number(doc.valor ?? 0).toLocaleString()}
                           </td>
-                          <td className="px-4 py-4 text-center text-slate-700">{doc.cuenta_puc ?? '—'}</td>
+                          <td className="px-4 py-4 text-center text-slate-700">{doc.cuenta_puc ?? 'â€”'}</td>
                           <td className="px-4 py-4 text-center">
                             <span
                               className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
@@ -281,7 +281,7 @@ function DocumentosContenido() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Número de documento</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">NÃºmero de documento</label>
                   <input
                     value={numero}
                     onChange={(e) => setNumero(e.target.value)}
@@ -290,7 +290,7 @@ function DocumentosContenido() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Fecha de emisión</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Fecha de emisiÃ³n</label>
                   <input
                     type="date"
                     value={fecha}
@@ -331,3 +331,4 @@ function DocumentosContenido() {
     </div>
   )
 }
+
