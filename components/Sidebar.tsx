@@ -1,24 +1,21 @@
 ﻿'use client'
-// components/Sidebar.tsx
-// Barra lateral compartida por todas las paginas.
-
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import SelectorEmpresa from '@/components/SelectorEmpresa'
-import { usePathname, useSearchParams } from 'next/navigation'
 
 const menuItems = [
-  { id: 'dashboard',     icon: 'ðŸ“Š', label: 'Dashboard',          href: '/dashboard' },
-  { id: 'documentos',    icon: 'ðŸ“„', label: 'Documentos',         href: '/documentos' },
-  { id: 'nomina',        icon: 'ðŸ§¾', label: 'Nomina',             href: '/nomina' },
-  { id: 'cobrar',        icon: 'ðŸ’°', label: 'Cuentas por Cobrar', href: '/cobrar' },
-  { id: 'pagar',         icon: 'ðŸ’³', label: 'Cuentas por Pagar',  href: '/pagar' },
-  { id: 'alertas',       icon: 'âš ï¸', label: 'Centro de Alertas',  href: '/alertas' },
-  { id: 'revision',      icon: 'ðŸ¤–', label: 'Revision IA',        href: '/documentos?vista=revision' },
-  { id: 'clientes',      icon: 'ðŸ‘¥', label: 'Clientes',           href: '/clientes' },
-  { id: 'proveedores',   icon: 'ðŸ­', label: 'Proveedores',        href: '/dashboard?seccion=proveedores' },
-  { id: 'bancos',        icon: 'ðŸ¦', label: 'Conciliacion Bancaria', href: '/bancos' },
-  { id: 'reportes',      icon: 'ðŸ“ˆ', label: 'Reportes',           href: '/reportes' },
-  { id: 'configuracion', icon: 'âš™ï¸', label: 'Configuracion',      href: '/configuracion' },
+  { id: 'dashboard',     icon: '📊', label: 'Dashboard',             href: '/dashboard' },
+  { id: 'documentos',    icon: '📄', label: 'Documentos',            href: '/documentos' },
+  { id: 'nomina',        icon: '🧾', label: 'Nomina',                href: '/nomina' },
+  { id: 'cobrar',        icon: '💰', label: 'Cuentas por Cobrar',    href: '/cobrar' },
+  { id: 'pagar',         icon: '💳', label: 'Cuentas por Pagar',     href: '/pagar' },
+  { id: 'alertas',       icon: '⚠️', label: 'Centro de Alertas',     href: '/alertas' },
+  { id: 'revision',      icon: '🤖', label: 'Revision IA',           href: '/documentos?vista=revision' },
+  { id: 'clientes',      icon: '👥', label: 'Clientes',              href: '/clientes' },
+  { id: 'proveedores',   icon: '🏭', label: 'Proveedores',           href: '/dashboard?seccion=proveedores' },
+  { id: 'bancos',        icon: '🏦', label: 'Conciliacion Bancaria', href: '/bancos' },
+  { id: 'reportes',      icon: '📈', label: 'Reportes',              href: '/reportes' },
+  { id: 'configuracion', icon: '⚙️', label: 'Configuracion',         href: '/configuracion' },
 ]
 
 type SidebarProps = {
@@ -28,24 +25,18 @@ type SidebarProps = {
 }
 
 export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps) {
-  // SelectorEmpresa se renderiza dentro del sidebar
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-
   const activeId = (() => {
-    if (pathname === '/documentos') {
-      return searchParams.get('vista') === 'revision' ? 'revision' : 'documentos'
-    }
     if (pathname === '/nomina') return 'nomina'
-    if (pathname === '/reportes') return 'reportes'
+    if (pathname === '/documentos') return 'documentos'
     if (pathname === '/bancos') return 'bancos'
     if (pathname === '/cobrar') return 'cobrar'
-if (pathname === '/pagar') return 'pagar'
-if (pathname === '/alertas') return 'alertas'
-if (pathname === '/clientes') return 'clientes'
-if (pathname === '/proveedores') return 'proveedores'
-if (pathname === '/configuracion') return 'configuracion'
-if (pathname === '/dashboard') return 'dashboard'
+    if (pathname === '/pagar') return 'pagar'
+    if (pathname === '/alertas') return 'alertas'
+    if (pathname === '/clientes') return 'clientes'
+    if (pathname === '/proveedores') return 'proveedores'
+    if (pathname === '/configuracion') return 'configuracion'
+    if (pathname === '/dashboard') return 'dashboard'
     return ''
   })()
 
@@ -53,20 +44,27 @@ if (pathname === '/dashboard') return 'dashboard'
     <aside className="w-64 bg-slate-900 text-white flex flex-col fixed h-full z-10">
       <div className="px-6 py-5 border-b border-slate-700">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">ðŸ“Š</div>
+          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-sm">📊</div>
           <div>
             <h1 className="font-bold text-white text-sm">ContaBot</h1>
             <p className="text-slate-400 text-xs">Auxiliar Contable IA</p>
           </div>
         </div>
       </div>
-      <nav className="flex-1 px-3 py-4 space-y-1">
+
+      <div className="pt-3">
+        <SelectorEmpresa />
+      </div>
+
+      <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
         {menuItems.map((item) => (
           <Link
             key={item.id}
             href={item.href}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
-              activeId === item.id ? 'bg-emerald-500 text-white font-medium' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              activeId === item.id
+                ? 'bg-emerald-500 text-white font-medium'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
             }`}
           >
             <span>{item.icon}</span>
@@ -77,16 +75,19 @@ if (pathname === '/dashboard') return 'dashboard'
           </Link>
         ))}
       </nav>
+
       <div className="px-4 py-4 border-t border-slate-700">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-xs">
-            {user?.email?.[0]?.toUpperCase()}
+          <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-xs font-bold">
+            {user?.email?.[0]?.toUpperCase() ?? 'U'}
           </div>
-          <p className="text-xs text-white truncate flex-1">{user?.email}</p>
+          <div className="min-w-0">
+            <p className="text-xs text-slate-300 truncate">{user?.email}</p>
+          </div>
         </div>
         <button
           onClick={onLogout}
-          className="w-full text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors"
+          className="w-full text-left text-xs text-slate-400 hover:text-white transition-colors py-1"
         >
           Cerrar sesion
         </button>
@@ -94,4 +95,3 @@ if (pathname === '/dashboard') return 'dashboard'
     </aside>
   )
 }
-
