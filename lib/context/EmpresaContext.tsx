@@ -7,7 +7,7 @@ export type Empresa = {
   id: string
   nit: string
   razon_social: string
-  regimen_tributario: string | null
+  
 }
 
 type EmpresaContextType = {
@@ -39,7 +39,7 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
 
       const { data, error } = await supabase
         .from('usuarios_empresas')
-        .select('empresa_id, contabot_empresas(id, nit, razon_social, regimen_tributario)')
+        .select('empresa_id, contabot_empresas(id, nit, razon_social)')
         .eq('user_id', session.user.id)
 
       if (error || !data || data.length === 0) {
