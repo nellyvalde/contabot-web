@@ -29,44 +29,34 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
   const [empresaActiva, setEmpresaActivaState] = useState<Empresa | null>(null)
   const [cargando, setCargando] = useState(true)
 
-  useEffect(() => {
-    cargarEmpresas()
-  }, [])
+  useEffect(() => { cargarEmpresas() }, [])
 
   async function cargarEmpresas() {
     setCargando(true)
     try {
-      // Obtener sesion actual
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user?.id) { setCargando(false); return }
 
-      // Query 1: obtener empresa_ids del usuario
-      const { data: rels, error: e1 } = await supabase
+      const { data, error } = await supabase
         .from('usuarios_empresas')
-        .select('empresa_id')
+        .select('empresa_id, contabot_empresas(id, nit, razon_social, regimen_tributario)')
         .eq('user_id', session.user.id)
 
+      if (error || !data || data.length === 0) {
+        console.error('Error cargando empresas:', error)
+        setCargando(false)
+        return
+      }
 
-      if (e1 || !rels || rels.length === 0) { setCargando(false); return }
+      const lista: Empresa[] = data.map((row: any) => row.contabot_empresas).filter(Boolean)
+      if (lista.length === 0) { setCargando(false); return }
 
-      const ids = rels.map((r: any) => r.empresa_id)
-
-      // Query 2: obtener datos de esas empresas
-      const { data: emps, error: e2 } = await supabase
-        .from('contabot_empresas')
-        .select('id, nit, razon_social, regimen_tributario')
-        .in('id', ids)
-
-      if (e2 || !emps) { setCargando(false); return }
-
-      setEmpresas(emps)
-
-      // Restaurar empresa activa desde localStorage
+      setEmpresas(lista)
       const guardada = localStorage.getItem('contabot_empresa_activa')
-      const encontrada = guardada ? emps.find((e: Empresa) => e.id === guardada) : null
-      setEmpresaActivaState(encontrada ?? emps[0] ?? null)
+      const encontrada = guardada ? lista.find(e => e.id === guardada) : null
+      setEmpresaActivaState(encontrada ?? lista[0])
     } catch (err) {
-      console.error('Error cargando empresas:', err)
+      console.error('Error:', err)
     } finally {
       setCargando(false)
     }
@@ -87,4 +77,3 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
 export function useEmpresa() {
   return useContext(EmpresaContext)
 }
-
