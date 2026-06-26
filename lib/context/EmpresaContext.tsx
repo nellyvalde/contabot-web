@@ -45,7 +45,7 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
         .from('usuarios_empresas')
         .select('empresa_id')
         .eq('user_id', session.user.id)
-        .eq('activo', true)
+
 
       if (e1 || !rels || rels.length === 0) { setCargando(false); return }
 
@@ -87,3 +87,4 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
 export function useEmpresa() {
   return useContext(EmpresaContext)
 }
+
