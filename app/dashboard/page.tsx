@@ -44,6 +44,7 @@ function diasParaVencer(fechaVencimiento: string | null) {
 }
 
 export default function Dashboard() {
+  const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -95,7 +96,7 @@ useEffect(() => {
     }
   }, [empresaActiva?.id])
 
-  const { empresaActiva } = useEmpresa()
+  
   const cargarFacturas = async (userId: string) => {
     let query = supabase.from('facturas').select('*').eq('user_id', userId).order('created_at', { ascending: false })
     const legacyId = empresaActiva?.empresas_legacy_id
