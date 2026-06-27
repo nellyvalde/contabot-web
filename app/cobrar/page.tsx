@@ -1,5 +1,6 @@
-'use client'
+﻿'use client'
 import { useEffect, useState } from 'react'
+import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 
@@ -10,6 +11,7 @@ const estadoConfig: Record<string, string> = {
 }
 
 export default function CobrarPage() {
+  const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
   const [facturas, setFacturas] = useState<any[]>([])
   const [pagoModal, setPagoModal] = useState<any>(null)
@@ -21,6 +23,7 @@ export default function CobrarPage() {
       if (!data.user) window.location.href = '/'
       else { setUser(data.user); cargarFacturas(data.user.id) }
     })
+  useEffect(() => { if (user && empresaActiva?.id) cargarFacturas(user.id) }, [empresaActiva?.id])
   }, [])
 
   const cargarFacturas = async (userId: string) => {
@@ -103,3 +106,5 @@ export default function CobrarPage() {
     </div>
   )
 }
+
+
