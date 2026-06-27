@@ -112,4 +112,4 @@ export function liquidarNomina(entrada: EntradaLiquidacion): ResultadoLiquidacio
 
 function round2(valor: number): number {
   return Math.round(valor * 100) / 100
-}
+}dir lib\nomina
