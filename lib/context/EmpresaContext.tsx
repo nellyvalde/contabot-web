@@ -39,7 +39,7 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
 
       const { data, error } = await supabase
         .from('usuarios_empresas')
-        .select('empresa_id, contabot_empresas(id, nit, razon_social, empresas_legacy_id)')
+        .select('empresa_id, contabot_empresas(id, nit, razon_social)')
         .eq('user_id', session.user.id)
 
       if (error || !data || data.length === 0) {
@@ -77,6 +77,7 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
 export function useEmpresa() {
   return useContext(EmpresaContext)
 }
+
 
 
 
