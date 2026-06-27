@@ -65,22 +65,10 @@ function DocumentosContenido() {
     setCargando(true)
     setError(null)
 
-    const { data: empresa, error: errEmpresa } = await supabase
-      .from('contabot_empresas')
-      .select('id')
-      .limit(1)
-      .single()
-
-    if (errEmpresa || !empresa) {
-      setError('No se encontrÃ³ ninguna empresa registrada en Supabase.')
-      setCargando(false)
-      return
-    }
-
     const { data, error: errDocs } = await supabase
       .from('documentos')
       .select('id, tipo, numero_documento, proveedor_cliente, fecha, valor, cuenta_puc, estado')
-      .eq('empresa_id', empresa.id)
+      .eq('empresa_id', empresaActiva!.id)
       .order('fecha', { ascending: false })
 
     if (errDocs) {
