@@ -1,7 +1,7 @@
 ﻿'use client'
 // app/documentos/page.tsx
 //
-// Registro y conciliaciÃ³n de documentos soporte (facturas, comprobantes).
+// v2 - Registro y conciliaciÃ³n de documentos soporte (facturas, comprobantes).
 // Esta versiÃ³n permite registrar el documento y su metadato contable
 // (tipo, valor, cuenta PUC) manualmente. La carga del archivo fÃ­sico a
 // Supabase Storage y la extracciÃ³n automÃ¡tica por OCR quedan marcadas
@@ -329,6 +329,7 @@ function DocumentosContenido() {
     </div>
   )
 }
+
 
 
 
