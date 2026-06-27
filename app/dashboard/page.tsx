@@ -87,6 +87,13 @@ useEffect(() => {
       }
     })
   }, [])
+  useEffect(() => {
+    if (user && empresaActiva) {
+      setFacturas([])
+      cargarFacturas(user.id)
+      cargarClientesDB(user.id)
+    }
+  }, [empresaActiva?.id])
 
   const { empresaActiva } = useEmpresa()
   const cargarFacturas = async (userId: string) => {
