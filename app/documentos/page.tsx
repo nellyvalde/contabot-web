@@ -79,7 +79,7 @@ function DocumentosContenido() {
 
     const { data, error: errDocs } = await supabase
       .from('documentos')
-      .select('id, tipo, proveedor_cliente, fecha, valor, cuenta_puc, estado')
+      .select('id, tipo, numero_documento, proveedor_cliente, fecha, valor, cuenta_puc, estado')
       .eq('empresa_id', empresa.id)
       .order('fecha', { ascending: false })
 
@@ -118,7 +118,7 @@ function DocumentosContenido() {
       .insert({
         empresa_id: empresaId,
         tipo,
-        proveedor_cliente: numero.trim(),
+        numero_documento: numero.trim(),
         fecha: fecha || null,
         valor: Number(valor),
         cuenta_puc: cuentaPuc.trim() || null,
@@ -329,6 +329,7 @@ function DocumentosContenido() {
     </div>
   )
 }
+
 
 
 
