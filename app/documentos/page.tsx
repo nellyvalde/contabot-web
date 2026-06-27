@@ -20,11 +20,11 @@ type EstadoConciliacion = 'pendiente' | 'conciliado' | 'rechazado'
 type Documento = {
   id: string
   tipo: TipoDocumento
-  numero_documento: string | null
-  fecha_emision: string | null
+  proveedor_cliente: string | null
+  fecha: string | null
   valor: number | null
   cuenta_puc: string | null
-  estado_conciliacion: EstadoConciliacion
+  estado: EstadoConciliacion
 }
 
 const ETIQUETAS_TIPO: Record<TipoDocumento, string> = {
@@ -79,7 +79,7 @@ function DocumentosContenido() {
 
     const { data, error: errDocs } = await supabase
       .from('documentos')
-      .select('id, tipo, numero_documento, fecha_emision, valor, cuenta_puc, estado_conciliacion')
+      .select('id, tipo, proveedor_cliente, fecha_emision, valor, cuenta_puc, estado_conciliacion')
       .eq('empresa_id', empresa.id)
       .order('fecha_emision', { ascending: false })
 
@@ -118,7 +118,7 @@ function DocumentosContenido() {
       .insert({
         empresa_id: empresaId,
         tipo,
-        numero_documento: numero.trim(),
+        proveedor_cliente: numero.trim(),
         fecha_emision: fecha || null,
         valor: Number(valor),
         cuenta_puc: cuentaPuc.trim() || null,
@@ -227,7 +227,7 @@ function DocumentosContenido() {
                       {documentosFiltrados.map((doc) => (
                         <tr key={doc.id}>
                           <td className="px-4 py-4 text-slate-700">{ETIQUETAS_TIPO[doc.tipo]}</td>
-                          <td className="px-4 py-4 text-slate-700">{doc.numero_documento ?? 'â€”'}</td>
+                          <td className="px-4 py-4 text-slate-700">{doc.proveedor_cliente ?? 'â€”'}</td>
                           <td className="px-4 py-4 text-right text-slate-900 font-semibold">
                             ${Number(doc.valor ?? 0).toLocaleString()}
                           </td>
@@ -329,6 +329,8 @@ function DocumentosContenido() {
     </div>
   )
 }
+
+
 
 
 
