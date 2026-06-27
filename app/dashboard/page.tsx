@@ -99,9 +99,8 @@ useEffect(() => {
   
   const cargarFacturas = async (userId: string, empresa = empresaActiva) => {
     setFacturas([])
-    const legacyId = empresa?.empresas_legacy_id
-    if (!legacyId) { setFacturas([]); return }
-    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId).eq('empresa_id', legacyId).order('created_at', { ascending: false })
+    if (!empresa?.id) return
+    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId).eq('empresa_id', empresa.id).order('created_at', { ascending: false })
     if (data) setFacturas(data)
   }
 
