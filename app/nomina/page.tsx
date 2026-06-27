@@ -2,6 +2,7 @@
 // app/nomina/page.tsx — UI refactorizada estilo Linear/Notion
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { useUser } from '@/lib/hooks/useUser'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase/client'
@@ -77,14 +78,13 @@ function NominaContenido() {
   const [riesgo, setRiesgo] = useState<RiesgoARL>('I')
   const periodoContable = useMemo(() => construirPeriodoContable(periodoMes, periodoAnio), [periodoMes, periodoAnio])
 
-  useEffect(() => { cargarDatos() }, [])
-  useEffect(() => { if (user?.id) cargarNominaProgramada(periodoContable) }, [user?.id, periodoContable])
-
+  const { empresaActiva } = useEmpresa()
+  useEffect(() => { if (empresaActiva?.id) cargarDatos() }, [empresaActiva?.id])
+  useEffect(() => { if (user?.id && empresaActiva?.id) { setNominaProgramada([]); cargarNominaProgramada(periodoContable) } }, [user?.id, periodoContable, empresaActiva?.id])
   async function cargarDatos() {
     setCargando(true); setError(null)
-    const { data: empresa, error: e } = await supabase.from('contabot_empresas').select('id').limit(1).single()
-    if (e || !empresa) { setError('No se encontró ninguna empresa registrada.'); setCargando(false); return }
-    setEmpresaId(empresa.id)
+    if (!empresaActiva?.id) { setCargando(false); return }
+    setEmpresaId(empresaActiva.id)
     const { data, error: e2 } = await supabase.from('empleados').select('id,empresa_id,nombre,cedula,puesto,salario_base,riesgo_arl,activo').eq('empresa_id', empresa.id).order('nombre')
     if (e2) setError(`Error: ${e2.message}`); else setEmpleados(data ?? [])
     setCargando(false)
@@ -321,5 +321,6 @@ function NominaContenido() {
     </div>
   )
 }
+
 
 
