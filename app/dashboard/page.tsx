@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
+import { useEmpresa } from '@/lib/context/EmpresaContext'
 
 const categoriaConfig: Record<string, { color: string }> = {
   'Factura de Venta':     { color: 'bg-green-100 text-green-700' },
@@ -87,12 +88,11 @@ useEffect(() => {
     })
   }, [])
 
+  const { empresaActiva } = useEmpresa()
   const cargarFacturas = async (userId: string) => {
-    const { data } = await supabase
-      .from('facturas')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+    let query = supabase.from('facturas').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+    const legacyId = empresaActiva?.empresas_legacy_id
+    const { data } = await (legacyId ? query.eq('empresa_id', legacyId) : query)
     if (data) setFacturas(data)
   }
 
