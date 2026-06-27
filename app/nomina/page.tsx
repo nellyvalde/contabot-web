@@ -85,7 +85,7 @@ function NominaContenido() {
     setCargando(true); setError(null)
     if (!empresaActiva?.id) { setCargando(false); return }
     setEmpresaId(empresaActiva.id)
-    const { data, error: e2 } = await supabase.from('empleados').select('id,empresa_id,nombre,cedula,puesto,salario_base,riesgo_arl,activo').eq('empresa_id', empresa.id).order('nombre')
+    const { data, error: e2 } = await supabase.from('empleados').select('id,empresa_id,nombre,cedula,puesto,salario_base,riesgo_arl,activo').eq('empresa_id', empresaActiva.id).order('nombre')
     if (e2) setError(`Error: ${e2.message}`); else setEmpleados(data ?? [])
     setCargando(false)
   }
@@ -321,6 +321,7 @@ function NominaContenido() {
     </div>
   )
 }
+
 
 
 
