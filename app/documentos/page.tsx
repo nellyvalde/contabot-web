@@ -79,9 +79,9 @@ function DocumentosContenido() {
 
     const { data, error: errDocs } = await supabase
       .from('documentos')
-      .select('id, tipo, proveedor_cliente, fecha_emision, valor, cuenta_puc, estado_conciliacion')
+      .select('id, tipo, proveedor_cliente, fecha, valor, cuenta_puc, estado')
       .eq('empresa_id', empresa.id)
-      .order('fecha_emision', { ascending: false })
+      .order('fecha', { ascending: false })
 
     if (errDocs) {
       setError(`Error cargando documentos: ${errDocs.message}`)
@@ -94,12 +94,12 @@ function DocumentosContenido() {
 
   const documentosFiltrados = useMemo(() => {
     if (filtroEstado === 'todos') return documentos
-    return documentos.filter((d) => d.estado_conciliacion === filtroEstado)
+    return documentos.filter((d) => d.estado === filtroEstado)
   }, [documentos, filtroEstado])
 
   const totales = useMemo(() => {
-    const pendientes = documentos.filter((d) => d.estado_conciliacion === 'pendiente')
-    const conciliados = documentos.filter((d) => d.estado_conciliacion === 'conciliado')
+    const pendientes = documentos.filter((d) => d.estado === 'pendiente')
+    const conciliados = documentos.filter((d) => d.estado === 'conciliado')
     return {
       pendientes: pendientes.length,
       conciliados: conciliados.length,
@@ -119,7 +119,7 @@ function DocumentosContenido() {
         empresa_id: empresaId,
         tipo,
         proveedor_cliente: numero.trim(),
-        fecha_emision: fecha || null,
+        fecha: fecha || null,
         valor: Number(valor),
         cuenta_puc: cuentaPuc.trim() || null,
         estado_conciliacion: 'pendiente',
@@ -235,9 +235,9 @@ function DocumentosContenido() {
                           <td className="px-4 py-4 text-center">
                             <span
                               className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-                                doc.estado_conciliacion === 'conciliado'
+                                doc.estado === 'conciliado'
                                   ? 'bg-emerald-100 text-emerald-700'
-                                  : doc.estado_conciliacion === 'rechazado'
+                                  : doc.estado === 'rechazado'
                                   ? 'bg-red-100 text-red-700'
                                   : 'bg-yellow-100 text-yellow-700'
                               }`}
@@ -329,6 +329,7 @@ function DocumentosContenido() {
     </div>
   )
 }
+
 
 
 
