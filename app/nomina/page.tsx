@@ -93,7 +93,7 @@ function NominaContenido() {
   async function cargarNominaProgramada(periodo: string) {
     if (!user?.id) return
     setCargandoProgramada(true)
-    const { data, error: e } = await supabase.from('nomina_programada').select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion').eq('user_id', user.id).eq('periodo_contable', periodo).order('nombre_empleado')
+    const { data, error: e } = await supabase.from('nomina_programada').select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion').eq('user_id', user.id).eq('empresa_id', empresaActiva!.id).eq('periodo_contable', periodo).order('nombre_empleado')
     if (e) { setError(`Error: ${e.message}`); setCargandoProgramada(false); return }
     setNominaProgramada((data ?? []).map((f: any) => ({ id:f.id, nombreEmpleado:f.nombre_empleado, cedula:f.cedula, area:f.area, sueldoBase:Number(f.sueldo_base??0), cuentaPucBasico:f.cuenta_puc_basico??'510506', auxilioTransporte:Number(f.auxilio_transporte??0), cuentaPucTransporte:f.cuenta_puc_transporte??'510527', bonificaciones:Number(f.bonificaciones??0), cuentaPucBonos:f.cuenta_puc_bonos??'510530', prima:Number(f.prima??0), cuentaPucPrima:f.cuenta_puc_prima??'514015', abonoPrima:Number(f.abono_prima??0), cesantias:Number(f.cesantias??0), abonoCesantias:Number(f.abono_cesantias??0), abonoLiquidacion:Number(f.abono_liquidacion??0), netoPagar:Number(f.neto_pagar??0), excesoLey1393:Number(f.exceso_ley_1393??0), alertaRiesgoUgpp:Boolean(f.alerta_riesgo_ugpp), estado:f.estado, metodoConciliacion:f.metodo_conciliacion })))
     setCargandoProgramada(false)
@@ -321,6 +321,7 @@ function NominaContenido() {
     </div>
   )
 }
+
 
 
 
