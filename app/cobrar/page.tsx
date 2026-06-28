@@ -26,7 +26,7 @@ export default function CobrarPage() {
   }, [])
   useEffect(() => { if (user && empresaActiva?.id) cargarFacturas(user.id) }, [empresaActiva?.id])
   const cargarFacturas = async (userId: string) => {
-    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId).eq('empresa_id', empresaActiva?.id ?? '').order('created_at', { ascending: false })
     if (data) setFacturas(data)
   }
 
@@ -105,5 +105,6 @@ export default function CobrarPage() {
     </div>
   )
 }
+
 
 
