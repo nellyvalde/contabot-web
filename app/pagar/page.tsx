@@ -24,18 +24,27 @@ export default function PagarPage() {
   const [filtroEstado, setFiltroEstado] = useState('')
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) window.location.href = '/'
-      else { setUser(data.user); cargarFacturas(data.user.id) }
-    })
-  }, [])
-    useEffect(() => { if (user && empresaActiva?.id) cargarFacturas(user.id) }, [empresaActiva?.id])
+  supabase.auth.getUser().then(({ data }) => {
+    if (!data.user) window.location.href = '/'
+    else setUser(data.user)
+  })
+}, [])
 
+useEffect(() => {
+  if (empresaActiva?.id) cargarFacturas()
+}, [empresaActiva?.id])
 
-  const cargarFacturas = async (userId: string) => {
-    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId).eq('empresa_id', empresaActiva?.id ?? '').order('created_at', { ascending: false })
-    if (data) setFacturas(data)
-  }
+const cargarFacturas = async () => {
+  if (!empresaActiva?.id) return
+
+  const { data } = await supabase
+    .from('facturas')
+    .select('*')
+    .eq('empresa_id', empresaActiva.id)
+    .order('fecha', { ascending: false })
+
+  if (data) setFacturas(data)
+}
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
@@ -43,7 +52,7 @@ export default function PagarPage() {
     if (!pagoModal) return
     await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', pagoModal.id)
     setPagoModal(null)
-    cargarFacturas(user.id)
+    cargarFacturas()
   }
 
   const facturasPagar = facturas.filter(f => {
