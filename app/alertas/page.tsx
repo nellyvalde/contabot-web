@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 
@@ -18,18 +19,27 @@ function diasVencido(fecha: string | null) {
 }
 
 export default function AlertasPage() {
+  const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
   const [facturas, setFacturas] = useState<any[]>([])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) window.location.href = '/'
-      else { setUser(data.user); cargarFacturas(data.user.id) }
+      else setUser(data.user)
     })
   }, [])
 
-  const cargarFacturas = async (userId: string) => {
-    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId)
+  useEffect(() => {
+    if (empresaActiva?.id) cargarFacturas()
+  }, [empresaActiva?.id])
+
+  const cargarFacturas = async () => {
+    if (!empresaActiva?.id) return
+    const { data } = await supabase
+      .from('facturas')
+      .select('*')
+      .eq('empresa_id', empresaActiva.id)
     if (data) setFacturas(data)
   }
 
