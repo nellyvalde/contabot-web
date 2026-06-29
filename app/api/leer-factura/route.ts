@@ -56,6 +56,10 @@ REGLAS EN ORDEN:
 5. Si ${empresaNombre} recibe la factura: tipo_documento="Factura Electronica", categoria="Factura de Compra", tipo="Factura de Compra", proveedor=nombre de quien emite
 6. Si es servicio publico o administrativo: categoria="Gasto", tipo="Factura de Compra"
 7. Si es nomina: tipo_documento="Nomina", categoria="Nomina", tipo="Factura de Compra", cuenta_puc="510506 - Salarios"
+DETECCION DE PAGO (MUY IMPORTANTE):
+- Revisa TODAS las paginas del documento
+- Si encuentras palabras como "Aprobado", "Transferencia exitosa", "Soporte de pago", "Pago exitoso", "Transaccion aprobada", "Comprobante de transferencia", "Recibo de pago" entonces ya_pagado=true
+- Si NO encuentras ningun soporte de pago entonces ya_pagado=false
 MAPEO PUC si no esta definido arriba:
 - Gasolina o combustible: cuenta_puc="519535 - Combustibles y lubricantes", combustible="Gasolina" o "Diesel"
 - Servicios publicos: cuenta_puc="528505 - Servicios publicos"
@@ -63,7 +67,7 @@ MAPEO PUC si no esta definido arriba:
 - Factura de Compra: cuenta_puc="143505 - Mercancias"
 - Factura de Venta: cuenta_puc="130505 - Clientes"
 - Otros gastos: cuenta_puc="519595 - Otros gastos"
-{"proveedor":"","nit_proveedor":"","numero_documento":"","fecha":"YYYY-MM-DD","fecha_emision":"YYYY-MM-DD","valor_base":0,"iva":0,"valor":0,"valor_total":0,"descripcion":"","tipo":"","categoria":"","tipo_documento":"","combustible":"","cuenta_puc":"","alerta":""}`
+{"proveedor":"","nit_proveedor":"","numero_documento":"","fecha":"YYYY-MM-DD","fecha_emision":"YYYY-MM-DD","valor_base":0,"iva":0,"valor":0,"valor_total":0,"descripcion":"","tipo":"","categoria":"","tipo_documento":"","combustible":"","cuenta_puc":"","alerta":"","ya_pagado":false}`
             }
           ]
         }
