@@ -1,21 +1,32 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 
 export default function ProveedoresPage() {
+  const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
   const [facturas, setFacturas] = useState<any[]>([])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) window.location.href = '/'
-      else { setUser(data.user); cargarFacturas(data.user.id) }
+      else setUser(data.user)
     })
   }, [])
 
-  const cargarFacturas = async (userId: string) => {
-    const { data } = await supabase.from('facturas').select('*').eq('user_id', userId)
+  useEffect(() => {
+    if (empresaActiva?.id) cargarFacturas()
+  }, [empresaActiva?.id])
+
+  const cargarFacturas = async () => {
+    if (!empresaActiva?.id) return
+    const { data } = await supabase
+      .from('facturas')
+      .select('*')
+      .eq('empresa_id', empresaActiva.id)
+      .order('fecha', { ascending: false })
     if (data) setFacturas(data)
   }
 
@@ -42,7 +53,7 @@ export default function ProveedoresPage() {
         <h2 className="text-2xl font-bold text-slate-800 mb-6">Proveedores</h2>
         <div className="bg-white rounded-2xl p-6 shadow-sm">
           {proveedoresAgrupados.length === 0 ? (
-            <div className="text-center py-10 text-slate-400"><p>No hay proveedores aun. Sube facturas de compra o gastos para verlos aqui.</p></div>
+            <div className="text-center py-10 text-slate-400"><p>No hay proveedores aún. Sube facturas de compra o gastos para verlos aquí.</p></div>
           ) : (
             <table className="w-full text-sm">
               <thead><tr className="text-left text-slate-500 border-b">
