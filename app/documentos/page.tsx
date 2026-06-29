@@ -157,7 +157,9 @@ function DocumentosContenido() {
       return
     }
   }
-
+    // Si la IA detectó soporte de pago → guardar como Conciliado automáticamente
+const estadoConciliacion: EstadoConciliacion = datosIA.ya_pagado ? 'conciliado' : 'pendiente'
+const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
     const tipoDoc: TipoDocumento =
       datosIA.categoria === 'Factura de Venta' ? 'factura_venta'
       : datosIA.categoria === 'Nomina' ? 'soporte_nomina'
@@ -173,8 +175,8 @@ function DocumentosContenido() {
       valor: datosIA.valor_total || datosIA.valor || 0,
       iva: datosIA.iva || 0,
       cuenta_puc: datosIA.cuenta_puc || null,
-      estado_conciliacion: 'pendiente',
-      estado: 'Pendiente',
+      estado_conciliacion: estadoConciliacion,
+      estado: estadoTexto,
     })
 
     if (e) {
