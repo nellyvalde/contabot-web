@@ -482,7 +482,7 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
                               {doc.estado_conciliacion}
                             </span>
                           </td>
-                          <<td className="px-4 py-3.5 flex gap-2">
+                          <td className="px-4 py-3.5 flex gap-2">
   {doc.estado_conciliacion !== 'conciliado' && (
     <button onClick={() => cambiarEstado(doc.id, 'conciliado')}
       className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 active:scale-[0.97] transition-all">
