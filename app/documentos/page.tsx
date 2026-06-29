@@ -226,6 +226,15 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
     if (errUpdate) { setError(`No se pudo actualizar: ${errUpdate.message}`); return }
     setDocumentos((prev) => prev.map((d) => d.id === id ? { ...d, estado_conciliacion: nuevoEstado } : d))
   }
+  async function eliminarDocumento(id: string) {
+  if (!confirm('¿Seguro que deseas eliminar este documento?')) return
+  const { error: e } = await supabase
+    .from('documentos')
+    .delete()
+    .eq('id', id)
+  if (e) { setError(`No se pudo eliminar: ${e.message}`); return }
+  setDocumentos(prev => prev.filter(d => d.id !== id))
+}
 
   const documentosFiltrados = useMemo(() => {
     if (filtroEstado === 'todos') return documentos
@@ -473,14 +482,18 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
                               {doc.estado_conciliacion}
                             </span>
                           </td>
-                          <td className="px-4 py-3.5">
-                            {doc.estado_conciliacion !== 'conciliado' && (
-                              <button onClick={() => cambiarEstado(doc.id, 'conciliado')}
-                                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 active:scale-[0.97] transition-all">
-                                ✓ Conciliar
-                              </button>
-                            )}
-                          </td>
+                          <<td className="px-4 py-3.5 flex gap-2">
+  {doc.estado_conciliacion !== 'conciliado' && (
+    <button onClick={() => cambiarEstado(doc.id, 'conciliado')}
+      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 active:scale-[0.97] transition-all">
+      ✓ Conciliar
+    </button>
+  )}
+  <button onClick={() => eliminarDocumento(doc.id)}
+    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-500 shadow-sm hover:bg-red-50 active:scale-[0.97] transition-all">
+    🗑
+  </button>
+</td>
                         </tr>
                       ))}
                     </tbody>
