@@ -143,6 +143,20 @@ function DocumentosContenido() {
     if (!datosIA || !empresaActiva?.id) return
     setGuardando(true)
     setError(null)
+    if (datosIA.numero_documento) {
+    const { data: existente } = await supabase
+      .from('documentos')
+      .select('id')
+      .eq('empresa_id', empresaActiva.id)
+      .eq('numero_documento', datosIA.numero_documento)
+      .maybeSingle()
+
+    if (existente) {
+      setError('⚠️ Este documento ya fue registrado. Número: ' + datosIA.numero_documento)
+      setGuardando(false)
+      return
+    }
+  }
 
     const tipoDoc: TipoDocumento =
       datosIA.categoria === 'Factura de Venta' ? 'factura_venta'
