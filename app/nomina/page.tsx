@@ -159,6 +159,7 @@ function NominaContenido() {
       .from('nomina_programada')
       .delete()
       .eq('user_id', user.id)
+      .eq('empresa_id', empresaActiva!.id)
       .eq('periodo_contable', periodoContable)
     if (e) { setError(`Error al limpiar: ${e.message}`); return }
     setNominaProgramada([])
