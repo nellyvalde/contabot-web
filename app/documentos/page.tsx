@@ -39,6 +39,7 @@ type DatosIA = {
   tipo_documento: string
   cuenta_puc: string
   alerta: string
+  ya_pagado: boolean
 }
 
 const ETIQUETAS_TIPO: Record<TipoDocumento, string> = {
