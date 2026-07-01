@@ -70,10 +70,19 @@ function DocumentosContenido() {
   const [tabActiva, setTabActiva] = useState<'pendientes' | 'ventas' | 'compras'>('pendientes')
 
   // ── Estados OCR ──
-  const [escaneando, setEscaneando] = useState(false)
-  const [datosIA, setDatosIA] = useState<DatosIA | null>(null)
-  const [guardando, setGuardando] = useState(false)
-  const [mensajeExito, setMensajeExito] = useState<string | null>(null)
+  // ── Estados OCR ──
+const [escaneando, setEscaneando] = useState(false)
+const [datosIA, setDatosIA] = useState<DatosIA | null>(null)
+const [guardando, setGuardando] = useState(false)
+const [mensajeExito, setMensajeExito] = useState<string | null>(null)
+const [paginaActual, setPaginaActual] = useState(0)
+const [totalPaginas, setTotalPaginas] = useState(0)
+const [procesandoMultiple, setProcesandoMultiple] = useState(false)
+const [resultadosMultiples, setResultadosMultiples] = useState<any[]>([])
+const [paginaActual, setPaginaActual] = useState(0)
+const [totalPaginas, setTotalPaginas] = useState(0)
+const [procesandoMultiple, setProcesandoMultiple] = useState(false)
+const [resultadosMultiples, setResultadosMultiples] = useState<any[]>([])
 
   // ── Formulario manual ──
   const [tipo, setTipo] = useState<TipoDocumento>('factura_compra')
@@ -110,37 +119,147 @@ function DocumentosContenido() {
   // ── OCR: subir archivo ──────────────────────────────────────────────────
   // Por qué: enviamos empresa_nombre y empresa_nit para que el prompt
   // de la IA sea dinámico y no tenga SODEPORTC hardcodeado
+  
   async function handleArchivo(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !empresaActiva) return
-    e.target.value = ''
+  const file = e.target.files?.[0]
+  if (!file || !empresaActiva) return
+  e.target.value = ''
 
-    setEscaneando(true)
-    setDatosIA(null)
-    setError(null)
-    setMensajeExito(null)
+  setEscaneando(true)
+  setDatosIA(null)
+  setError(null)
+  setMensajeExito(null)
+  setPaginaActual(0)
+  setTotalPaginas(0)
+  setProcesandoMultiple(false)
+  setResultadosMultiples([])
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('empresa_nombre', empresaActiva.razon_social)
-    formData.append('empresa_nit', empresaActiva.nit)
-
-    try {
+  try {
+    // Si es imagen procesamos directo
+    if (!file.type.includes('pdf')) {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('empresa_nombre', empresaActiva.razon_social)
+      formData.append('empresa_nit', empresaActiva.nit)
       const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
       const json = await res.json()
-      if (json.success) {
-        setDatosIA(json.datos)
-      } else {
-        setError('La IA no pudo leer el documento: ' + json.error)
-      }
-    } catch {
-      setError('Error de conexión al procesar el archivo.')
+      if (json.success) setDatosIA(json.datos)
+      else setError('La IA no pudo leer el documento: ' + json.error)
+      setEscaneando(false)
+      return
     }
-    setEscaneando(false)
+
+    // PDF — contar páginas en el browser con pdf-lib
+    const { PDFDocument } = await import('pdf-lib')
+    const arrayBuffer = await file.arrayBuffer()
+    const pdfDoc = await PDFDocument.load(arrayBuffer)
+    const numPaginas = pdfDoc.getPageCount()
+
+    // PDF de 1 página — procesar directo
+    if (numPaginas === 1) {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('empresa_nombre', empresaActiva.razon_social)
+      formData.append('empresa_nit', empresaActiva.nit)
+      const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
+      const json = await res.json()
+      if (json.success) setDatosIA(json.datos)
+      else setError('La IA no pudo leer el documento: ' + json.error)
+      setEscaneando(false)
+      return
+    }
+
+    // PDF multipágina — procesar página por página
+    setTotalPaginas(numPaginas)
+    setProcesandoMultiple(true)
+    const resultados: any[] = []
+
+    for (let i = 0; i < numPaginas; i++) {
+      setPaginaActual(i + 1)
+
+      // Extraer página individual
+      const pdfPagina = await PDFDocument.create()
+      const [pagina] = await pdfPagina.copyPages(pdfDoc, [i])
+      pdfPagina.addPage(pagina)
+      const bytesPagena = await pdfPagina.save()
+      const blob = new Blob([bytesPagena], { type: 'application/pdf' })
+
+      const formData = new FormData()
+      formData.append('file', blob, `pagina_${i + 1}.pdf`)
+      formData.append('empresa_nombre', empresaActiva.razon_social)
+      formData.append('empresa_nit', empresaActiva.nit)
+
+      try {
+        const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
+        const json = await res.json()
+        if (json.success) resultados.push({ pagina: i + 1, datos: json.datos })
+        else resultados.push({ pagina: i + 1, datos: null, error: json.error })
+      } catch {
+        resultados.push({ pagina: i + 1, datos: null, error: 'Error de conexión' })
+      }
+    }
+
+    // Aplicar grapadora — agrupar parejas factura + comprobante
+    const registrosFinales: any[] = []
+    let i = 0
+    while (i < resultados.length) {
+      const actual = resultados[i]
+      const siguiente = resultados[i + 1]
+
+      if (actual.datos && siguiente?.datos) {
+        const esFactura = ['Factura Electronica', 'Factura de Compra', 'Factura de Venta'].includes(actual.datos.tipo_documento)
+        const esComprobante = siguiente.datos.ya_pagado || ['Comprobante de Pago a Terceros'].includes(siguiente.datos.tipo_documento)
+        const mismoValor = Math.abs((actual.datos.valor_total || 0) - (siguiente.datos.valor_total || 0)) < 5000
+
+        if (esFactura && esComprobante && mismoValor) {
+          registrosFinales.push({ ...actual.datos, ya_pagado: true, paginas: [actual.pagina, siguiente.pagina], fusionado: true })
+          i += 2
+          continue
+        }
+      }
+
+      if (actual.datos) registrosFinales.push({ ...actual.datos, paginas: [actual.pagina], fusionado: false })
+      i++
+    }
+
+    setResultadosMultiples(registrosFinales)
+    setMensajeExito(`✅ ${numPaginas} páginas procesadas — ${registrosFinales.length} documento(s) encontrado(s)`)
+
+  } catch (err: any) {
+    setError('Error procesando el archivo: ' + err.message)
   }
 
+  setEscaneando(false)
+  setProcesandoMultiple(false)
+}
   // ── Guardar resultado OCR ───────────────────────────────────────────────
   // Por qué: mapeamos los campos de la IA a los campos de la tabla documentos
+  async function guardarRegistroMultiple(reg: any, idx: number) {
+  if (!empresaActiva?.id) return
+
+  const tipoDoc: TipoDocumento =
+    reg.categoria === 'Factura de Venta' ? 'factura_venta'
+    : reg.categoria === 'Nomina' ? 'soporte_nomina'
+    : 'factura_compra'
+
+  const { error: e } = await supabase.from('documentos').insert({
+    empresa_id: empresaActiva.id,
+    tipo: tipoDoc,
+    numero_documento: reg.numero_documento || null,
+    proveedor_cliente: reg.proveedor || null,
+    descripcion: reg.descripcion || null,
+    fecha_emision: reg.fecha_emision || reg.fecha || null,
+    valor: reg.valor_total || reg.valor || 0,
+    iva: reg.iva || 0,
+    cuenta_puc: reg.cuenta_puc || null,
+    estado_conciliacion: reg.ya_pagado ? 'conciliado' : 'pendiente',
+    estado: reg.ya_pagado ? 'Pagado' : 'Pendiente',
+  })
+
+  if (e) { setError(`Error guardando: ${e.message}`); return }
+  setResultadosMultiples(prev => prev.filter((_, i) => i !== idx))
+  await cargarDocumentos()
+}
   async function guardarDesdeIA() {
     if (!datosIA || !empresaActiva?.id) return
     setGuardando(true)
@@ -331,25 +450,32 @@ const documentosFiltrados = useMemo(() => {
             )}
 
             {/* Animación escaneando */}
-            {escaneando && (
-              <div className="flex flex-col items-center justify-center py-14 gap-4">
-                <div className="relative w-16 h-16">
-                  <div className="absolute inset-0 rounded-full border-4 border-emerald-200 animate-ping" />
-                  <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
-                  <span className="absolute inset-0 flex items-center justify-center text-2xl">🔍</span>
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold text-slate-800 text-lg">IA Escaneando...</p>
-                  <p className="text-sm text-slate-400 mt-1">Extrayendo proveedor, NIT, valores e IVA</p>
-                </div>
-                <div className="flex gap-1 mt-2">
-                  {[0,1,2].map(i => (
-                    <div key={i} className="w-2 h-2 rounded-full bg-emerald-500 animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
-              </div>
-            )}
+{escaneando && (
+  <div className="flex flex-col items-center justify-center py-14 gap-4">
+    <div className="relative w-16 h-16">
+      <div className="absolute inset-0 rounded-full border-4 border-emerald-200 animate-ping" />
+      <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
+      <span className="absolute inset-0 flex items-center justify-center text-2xl">🔍</span>
+    </div>
+    <div className="text-center">
+      {totalPaginas > 1 ? (
+        <>
+          <p className="font-semibold text-slate-800 text-lg">Procesando página {paginaActual} de {totalPaginas}</p>
+          <div className="w-64 h-2 bg-slate-100 rounded-full mt-3 overflow-hidden">
+            <div className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+              style={{ width: `${totalPaginas > 0 ? (paginaActual / totalPaginas) * 100 : 0}%` }} />
+          </div>
+          <p className="text-xs text-slate-400 mt-2">{Math.round((paginaActual / totalPaginas) * 100)}% completado</p>
+        </>
+      ) : (
+        <>
+          <p className="font-semibold text-slate-800 text-lg">IA Escaneando...</p>
+          <p className="text-sm text-slate-400 mt-1">Extrayendo proveedor, NIT, valores e IVA</p>
+        </>
+      )}
+    </div>
+  </div>
+)}
 
             {/* Formulario de confirmación con datos de la IA */}
             {datosIA && !escaneando && (
@@ -436,6 +562,35 @@ const documentosFiltrados = useMemo(() => {
               </div>
             )}
           </div>
+          {/* Resultados múltiples páginas */}
+{resultadosMultiples.length > 0 && !escaneando && (
+  <div className="space-y-3">
+    <p className="font-semibold text-slate-800">{resultadosMultiples.length} documento(s) detectado(s) — confirma cada uno:</p>
+    {resultadosMultiples.map((reg, idx) => (
+      <div key={idx} className={`rounded-xl border px-4 py-3 ${reg.fusionado ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">{reg.proveedor || 'Sin nombre'}</p>
+            <p className="text-xs text-slate-500">{reg.tipo_documento} · ${Number(reg.valor_total || reg.valor || 0).toLocaleString()}</p>
+            <p className="text-xs text-slate-400">Página(s): {reg.paginas?.join(' + ')}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {reg.fusionado && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium">🔗 Fusionado</span>}
+            {reg.ya_pagado && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">✅ Pagado</span>}
+            <button onClick={() => guardarRegistroMultiple(reg, idx)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+              Guardar
+            </button>
+          </div>
+        </div>
+      </div>
+    ))}
+    <button onClick={() => setResultadosMultiples([])}
+      className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50">
+      Cancelar todo
+    </button>
+  </div>
+)}
 
           {/* ── Tabla + formulario manual (igual que antes) ── */}
           <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
