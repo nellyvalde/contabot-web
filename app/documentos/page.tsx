@@ -231,6 +231,12 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
 }
   // ── Guardar resultado OCR ───────────────────────────────────────────────
   // Por qué: mapeamos los campos de la IA a los campos de la tabla documentos
+  async function guardarTodos() {
+  for (let i = 0; i < resultadosMultiples.length; i++) {
+    await guardarRegistroMultiple(resultadosMultiples[0], 0)
+  }
+  setMensajeExito(`✅ ${resultadosMultiples.length} documentos guardados correctamente`)
+}
   async function guardarRegistroMultiple(reg: any, idx: number) {
   if (!empresaActiva?.id || !user) return
 
@@ -635,7 +641,13 @@ const documentosFiltrados = useMemo(() => {
           {/* Resultados múltiples páginas */}
 {resultadosMultiples.length > 0 && !escaneando && (
   <div className="space-y-3">
-    <p className="font-semibold text-slate-800">{resultadosMultiples.length} documento(s) detectado(s) — confirma cada uno:</p>
+    <div className="flex items-center justify-between mb-2">
+  <p className="font-semibold text-slate-800">{resultadosMultiples.length} documento(s) detectado(s)</p>
+  <button onClick={guardarTodos}
+    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+    ✓ Guardar todos
+  </button>
+</div>
     {resultadosMultiples.map((reg, idx) => (
       <div key={idx} className={`rounded-xl border px-4 py-3 ${reg.fusionado ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
         <div className="flex items-center justify-between">
@@ -707,7 +719,7 @@ const documentosFiltrados = useMemo(() => {
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
-                        {['Tipo','Nº Documento','Proveedor/Cliente','Valor','Cuenta PUC','Estado','Acción'].map(h => (
+                        {['Tipo','Nº Documento','Proveedor/Cliente','Valor','Cuenta PUC','Estado','PDF','Acción'].map(h => (
                           <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">{h}</th>
                         ))}
                       </tr>
@@ -733,6 +745,14 @@ const documentosFiltrados = useMemo(() => {
                               {doc.estado_conciliacion}
                             </span>
                           </td>
+                          <td className="px-4 py-3.5">
+  {doc.archivo_url ? (
+    <a href={doc.archivo_url} target="_blank" rel="noopener noreferrer"
+      className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm hover:bg-blue-50">
+      📄 Ver
+    </a>
+  ) : <span className="text-slate-300 text-xs">—</span>}
+</td>
                           <td className="px-4 py-3.5 flex gap-2">
   {doc.estado_conciliacion !== 'conciliado' && (
     <button onClick={() => cambiarEstado(doc.id, 'conciliado')}
