@@ -137,6 +137,11 @@ export async function POST(request: NextRequest) {
     }
 
     // PDF multipágina — analizar página por página
+    // PDFs de más de 2 páginas — procesar completo para evitar timeout
+if (numPaginas > 2) {
+  const datos = await analizarPagina(base64Total, empresaNombre, empresaNit)
+  return NextResponse.json({ success: true, datos, modo: 'pdf_completo' })
+}
     const analisisPorPagina: any[] = []
     for (let i = 0; i < numPaginas; i++) {
       const base64Pagina = await extraerPagina(pdfBytes, i)
