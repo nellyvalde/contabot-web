@@ -627,9 +627,9 @@ export default function Dashboard() {
 
   const datos = vista === 'meses' ? datosMeses : datosDias
 
-  const formatTooltip = (value: number, name: string) => {
-    return ['$' + value.toLocaleString('es-CO'), name === 'ingresos' ? 'Ingresos' : 'Gastos']
-  }
+  const formatTooltip = (value: any, name: any): [string, string] => {
+  return ['$' + Number(value).toLocaleString('es-CO'), name === 'ingresos' ? 'Ingresos' : 'Gastos']
+}
 
   return (
     <div>
