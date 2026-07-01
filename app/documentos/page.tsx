@@ -67,6 +67,7 @@ function DocumentosContenido() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<EstadoConciliacion | 'todos'>('todos')
+  const [tabActiva, setTabActiva] = useState<'pendientes' | 'ventas' | 'compras'>('pendientes')
 
   // ── Estados OCR ──
   const [escaneando, setEscaneando] = useState(false)
@@ -235,11 +236,21 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
   if (e) { setError(`No se pudo eliminar: ${e.message}`); return }
   setDocumentos(prev => prev.filter(d => d.id !== id))
 }
+const documentosPorTab = useMemo(() => {
+  switch (tabActiva) {
+    case 'ventas':
+      return documentos.filter(d => d.tipo === 'factura_venta')
+    case 'compras':
+      return documentos.filter(d => d.tipo === 'factura_compra' || d.tipo === 'comprobante_egreso')
+    default:
+      return documentos.filter(d => d.estado_conciliacion === 'pendiente')
+  }
+}, [documentos, tabActiva])
 
-  const documentosFiltrados = useMemo(() => {
-    if (filtroEstado === 'todos') return documentos
-    return documentos.filter((d) => d.estado_conciliacion === filtroEstado)
-  }, [documentos, filtroEstado])
+const documentosFiltrados = useMemo(() => {
+  if (filtroEstado === 'todos') return documentosPorTab
+  return documentosPorTab.filter((d) => d.estado_conciliacion === filtroEstado)
+}, [documentosPorTab, filtroEstado])
 
   const totales = useMemo(() => {
     const pendientes = documentos.filter((d) => d.estado_conciliacion === 'pendiente')
@@ -430,7 +441,22 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
           <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
             <div className="rounded-2xl bg-white p-6 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-slate-900">Documentos registrados</h2>
+                <div className="flex gap-2 mb-2">
+  {[
+    { id: 'pendientes', label: '📥 Por Procesar' },
+    { id: 'ventas',     label: '💰 Ventas' },
+    { id: 'compras',    label: '💸 Compras y Gastos' },
+  ].map(tab => (
+    <button key={tab.id} onClick={() => setTabActiva(tab.id as any)}
+      className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+        tabActiva === tab.id
+          ? 'bg-emerald-600 text-white shadow-sm'
+          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+      }`}>
+      {tab.label}
+    </button>
+  ))}
+</div>
                 <select value={filtroEstado}
                   onChange={(e) => setFiltroEstado(e.target.value as EstadoConciliacion | 'todos')}
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400">
