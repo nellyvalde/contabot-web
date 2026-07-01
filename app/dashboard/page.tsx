@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
-
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 const categoriaConfig: Record<string, { color: string }> = {
   'Factura de Venta':     { color: 'bg-green-100 text-green-700' },
   'Factura de Compra':    { color: 'bg-blue-100 text-blue-700' },
@@ -591,8 +591,7 @@ export default function Dashboard() {
     </div>
   )
   function GraficoIngresosGastos({ facturas }: { facturas: any[] }) {
-  const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts')
-
+  
   const datos = Array.from({ length: 6 }, (_, i) => {
     const fecha = new Date()
     fecha.setMonth(fecha.getMonth() - (5 - i))
