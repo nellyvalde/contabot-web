@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+
 const categoriaConfig: Record<string, { color: string }> = {
   'Factura de Venta':     { color: 'bg-green-100 text-green-700' },
   'Factura de Compra':    { color: 'bg-blue-100 text-blue-700' },
@@ -591,7 +591,6 @@ export default function Dashboard() {
     </div>
   )
   function GraficoIngresosGastos({ facturas }: { facturas: any[] }) {
-  
   const datos = Array.from({ length: 6 }, (_, i) => {
     const fecha = new Date()
     fecha.setMonth(fecha.getMonth() - (5 - i))
@@ -607,27 +606,28 @@ export default function Dashboard() {
     return { mes, ingresos, gastos }
   })
 
+  const maxVal = Math.max(...datos.map(d => Math.max(d.ingresos, d.gastos)), 1)
+
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={datos} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-          </linearGradient>
-          <linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15}/>
-            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-        <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${(v/1000).toFixed(0)}k`}
-        <Tooltip formatter={(v: any) => [Number(v).toLocaleString(), '']} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
-        <Area type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2} fill="url(#colorIngresos)" name="Ingresos" />
-        <Area type="monotone" dataKey="gastos" stroke="#ef4444" strokeWidth={2} fill="url(#colorGastos)" name="Gastos" />
-      </AreaChart>
-    </ResponsiveContainer>
+    <div className="space-y-3">
+      {datos.map((d, i) => (
+        <div key={i} className="space-y-1">
+          <div className="flex justify-between text-xs text-slate-500">
+            <span className="font-medium">{d.mes}</span>
+            <span className="text-emerald-600">${d.ingresos.toLocaleString()}</span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(d.ingresos / maxVal) * 100}%` }} />
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-red-400 rounded-full" style={{ width: `${(d.gastos / maxVal) * 100}%` }} />
+          </div>
+        </div>
+      ))}
+      <div className="flex gap-4 pt-2">
+        <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-3 h-2 bg-emerald-500 rounded-full inline-block"/>Ingresos</span>
+        <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-3 h-2 bg-red-400 rounded-full inline-block"/>Gastos</span>
+      </div>
+    </div>
   )
-}
 }
