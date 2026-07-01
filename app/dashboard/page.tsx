@@ -63,6 +63,9 @@ export default function Dashboard() {
   const [filtroFechaFin, setFiltroFechaFin] = useState('')
   const [filtroValorMin, setFiltroValorMin] = useState('')
   const [filtroValorMax, setFiltroValorMax] = useState('')
+  const [preguntaBot, setPreguntaBot] = useState('')
+const [respuestaBot, setRespuestaBot] = useState('')
+const [cargandoBot, setCargandoBot] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -105,7 +108,38 @@ export default function Dashboard() {
       .eq('empresa_id', empresaActiva.id)
     if (data) setClientesDB(data)
   }
+const utilidad = totalIngresos - totalGastos
+const porcentajeGasto = totalIngresos > 0 ? Math.round((totalGastos / totalIngresos) * 100) : 0
 
+const preguntarBot = async () => {
+  if (!preguntaBot.trim()) return
+  setCargandoBot(true)
+  try {
+    const res = await fetch('/api/leer-factura', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tipo: 'consulta',
+        pregunta: preguntaBot,
+        contexto: {
+          empresa: empresaActiva?.razon_social,
+          totalIngresos,
+          totalGastos,
+          utilidad,
+          cuentasPorCobrar,
+          cuentasPorPagar,
+          totalFacturas: facturas.length,
+        }
+      })
+    })
+    const json = await res.json()
+    setRespuestaBot(json.respuesta || 'No pude procesar tu consulta.')
+  } catch {
+    setRespuestaBot('Error de conexión.')
+  }
+  setCargandoBot(false)
+  setPreguntaBot('')
+}
   const handleLogout = async () => {
     await supabase.auth.signOut()
     window.location.href = '/'
@@ -368,7 +402,62 @@ export default function Dashboard() {
         <p className="text-xs text-slate-400 mt-1">Vencidas y próximas a vencer →</p>
       </div>
     </div>
+{/* Calendario Tributario + Chat IA */}
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
 
+      {/* Calendario Tributario */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4">📅 Vencimientos de Impuestos</h3>
+        <CalendarioTributario nit={empresaActiva?.nit || ''} />
+      </div>
+
+      {/* Chat IA */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-800 mb-3">🤖 Tu Asistente ContaBot</h3>
+
+        {/* Sugerencia automática si utilidad negativa */}
+        {utilidad < 0 && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 mb-4">
+            <p className="text-xs font-semibold text-amber-700 mb-1">⚠️ Análisis automático</p>
+            <p className="text-xs text-amber-600">
+              Tus gastos superan los ingresos en un {porcentajeGasto}%. Revisa los registros de Compras y Gastos para optimizar tu flujo de caja.
+            </p>
+          </div>
+        )}
+
+        {respuestaBot && (
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 mb-4">
+            <p className="text-xs text-slate-600">{respuestaBot}</p>
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-2">
+          <input
+            value={preguntaBot}
+            onChange={e => setPreguntaBot(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && preguntarBot()}
+            placeholder="¿Cuál es mi utilidad del mes?"
+            className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          />
+          <button
+            onClick={preguntarBot}
+            disabled={cargandoBot}
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {cargandoBot ? '...' : '→'}
+          </button>
+        </div>
+
+        <div className="flex gap-2 mt-3 flex-wrap">
+          {['¿Cuál es mi utilidad?', '¿Qué debo pagar?', '¿Cómo mejorar mi flujo?'].map(q => (
+            <button key={q} onClick={() => { setPreguntaBot(q); preguntarBot() }}
+              className="text-xs bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200">
+              {q}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
     {/* Subir documento */}
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
       <div className="flex items-center justify-between mb-4">
@@ -589,6 +678,67 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+function CalendarioTributario({ nit }: { nit: string }) {
+  const ultimoDigito = nit ? parseInt(nit.replace(/\D/g, '').slice(-1)) : 0
+  const hoy = new Date()
+  const mes = hoy.getMonth()
+  const anio = hoy.getFullYear()
+
+  const vencimientos = [
+    {
+      impuesto: 'Retención en la fuente',
+      descripcion: 'Declaración mensual',
+      fecha: new Date(anio, mes + 1, 8 + ultimoDigito),
+      color: 'bg-blue-50 border-blue-200 text-blue-700',
+    },
+    {
+      impuesto: 'IVA Bimestral',
+      descripcion: 'Si es responsable bimestral',
+      fecha: new Date(anio, mes + 1, 10 + ultimoDigito),
+      color: 'bg-purple-50 border-purple-200 text-purple-700',
+    },
+    {
+      impuesto: 'ICA',
+      descripcion: 'Impuesto de industria y comercio',
+      fecha: new Date(anio, mes + 1, 12 + ultimoDigito),
+      color: 'bg-orange-50 border-orange-200 text-orange-700',
+    },
+  ]
+
+  const diasRestantes = (fecha: Date) => {
+    const diff = Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
+    return diff
+  }
+
+  return (
+    <div className="space-y-3">
+      {vencimientos.map((v, i) => {
+        const dias = diasRestantes(v.fecha)
+        return (
+          <div key={i} className={`rounded-xl border px-4 py-3 ${v.color}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold">{v.impuesto}</p>
+                <p className="text-xs opacity-70 mt-0.5">{v.descripcion}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-bold">
+                  {v.fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}
+                </p>
+                <p className="text-xs opacity-70">
+                  {dias > 0 ? `${dias} días` : dias === 0 ? '¡Hoy!' : 'Vencido'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+      <p className="text-xs text-slate-400 mt-2">
+        * Fechas calculadas para NIT terminado en {ultimoDigito}
+      </p>
     </div>
   )
 }
