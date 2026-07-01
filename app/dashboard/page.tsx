@@ -629,6 +629,6 @@ export default function Dashboard() {
         <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-3 h-2 bg-emerald-500 rounded-full inline-block"/>Ingresos</span>
         <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-3 h-2 bg-red-400 rounded-full inline-block"/>Gastos</span>
       </div>
-    </div>)
+   </div>
   )
 }
