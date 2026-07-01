@@ -108,8 +108,6 @@ const [cargandoBot, setCargandoBot] = useState(false)
       .eq('empresa_id', empresaActiva.id)
     if (data) setClientesDB(data)
   }
-const utilidad = totalIngresos - totalGastos
-const porcentajeGasto = totalIngresos > 0 ? Math.round((totalGastos / totalIngresos) * 100) : 0
 
 const preguntarBot = async () => {
   if (!preguntaBot.trim()) return
@@ -236,6 +234,8 @@ const preguntarBot = async () => {
 
   const totalIngresos = facturas.filter(f => f.categoria === 'Factura de Venta').reduce((a, b) => a + (b.valor || 0), 0)
   const totalGastos = facturas.filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria)).reduce((a, b) => a + (b.valor || 0), 0)
+  const utilidad = totalIngresos - totalGastos
+const porcentajeGasto = totalIngresos > 0 ? Math.round((totalGastos / totalIngresos) * 100) : 0
   const cuentasPorCobrar = facturas.filter(f => f.categoria === 'Factura de Venta' && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
   const cuentasPorPagar = facturas.filter(f => ['Factura de Compra', 'Gasto'].includes(f.categoria) && f.estado === 'Pendiente').reduce((a, b) => a + (b.valor || 0), 0)
 
