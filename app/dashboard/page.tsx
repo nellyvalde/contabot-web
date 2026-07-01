@@ -280,68 +280,122 @@ export default function Dashboard() {
       <main className="flex-1 ml-64 p-8">
 
         {seccion === 'dashboard' && (
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-emerald-500">
-                <p className="text-slate-500 text-sm">Ingresos del mes</p>
-                <p className="text-2xl font-bold text-emerald-600 mt-1">${totalIngresos.toLocaleString()}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-500">
-                <p className="text-slate-500 text-sm">Gastos del mes</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">${totalGastos.toLocaleString()}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500">
-                <p className="text-slate-500 text-sm">Caja disponible</p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">${(totalIngresos - totalGastos).toLocaleString()}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-yellow-500">
-                <p className="text-slate-500 text-sm">Documentos</p>
-                <p className="text-2xl font-bold text-yellow-600 mt-1">{facturas.length}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-green-400 cursor-pointer hover:shadow-md" onClick={() => setSeccion('cobrar')}>
-                <p className="text-slate-500 text-sm">Cuentas por Cobrar</p>
-                <p className="text-xs text-slate-400 mb-1">Facturas de Venta pendientes</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">${cuentasPorCobrar.toLocaleString()}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-orange-400 cursor-pointer hover:shadow-md" onClick={() => setSeccion('pagar')}>
-                <p className="text-slate-500 text-sm">Cuentas por Pagar</p>
-                <p className="text-xs text-slate-400 mb-1">Compras y Gastos pendientes</p>
-                <p className="text-2xl font-bold text-orange-600 mt-1">${cuentasPorPagar.toLocaleString()}</p>
-              </div>
-              <div className="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-red-400 cursor-pointer hover:shadow-md md:col-span-3" onClick={() => setSeccion('alertas')}>
-                <p className="text-slate-500 text-sm">Alertas Activas</p>
-                <p className="text-xs text-slate-400 mb-1">Facturas vencidas y proximas a vencer</p>
-                <p className="text-2xl font-bold text-red-600 mt-1">{totalAlertas} alertas pendientes</p>
+  <div className="space-y-6">
+    <div>
+      <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+      <p className="text-slate-400 text-sm mt-1">Resumen financiero de {empresaActiva?.razon_social}</p>
+    </div>
+
+    {/* KPIs */}
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Ingresos</p>
+          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Ventas</span>
+        </div>
+        <p className="text-2xl font-bold text-slate-900">${totalIngresos.toLocaleString()}</p>
+        <p className="text-xs text-emerald-600 mt-1 font-medium">● Facturas de venta</p>
+      </div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Gastos</p>
+          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Egresos</span>
+        </div>
+        <p className="text-2xl font-bold text-slate-900">${totalGastos.toLocaleString()}</p>
+        <p className="text-xs text-red-500 mt-1 font-medium">● Compras y gastos</p>
+      </div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Utilidad</p>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${totalIngresos - totalGastos >= 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+            {totalIngresos - totalGastos >= 0 ? 'Positiva' : 'Negativa'}
+          </span>
+        </div>
+        <p className={`text-2xl font-bold ${totalIngresos - totalGastos >= 0 ? 'text-slate-900' : 'text-red-600'}`}>
+          ${(totalIngresos - totalGastos).toLocaleString()}
+        </p>
+        <p className="text-xs text-blue-500 mt-1 font-medium">● Ingresos - Gastos</p>
+      </div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Documentos</p>
+          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">Total</span>
+        </div>
+        <p className="text-2xl font-bold text-slate-900">{facturas.length}</p>
+        <p className="text-xs text-slate-400 mt-1 font-medium">● Registrados en ContaBot</p>
+      </div>
+    </div>
+
+    {/* Gráfico + Actividad reciente */}
+    <div className="grid grid-cols-1 xl:grid-cols-[1fr_0.4fr] gap-4">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4">Ingresos vs Gastos</h3>
+        <GraficoIngresosGastos facturas={facturas} />
+      </div>
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-800 mb-4">Actividad reciente</h3>
+        <div className="space-y-3">
+          {facturas.slice(0, 6).map(f => (
+            <div key={f.id} className="flex items-start gap-3">
+              <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${f.categoria === 'Factura de Venta' ? 'bg-emerald-500' : 'bg-red-400'}`} />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-700 truncate">{f.proveedor || 'Sin nombre'}</p>
+                <p className="text-xs text-slate-400">${Number(f.valor || 0).toLocaleString()} · {f.categoria}</p>
               </div>
             </div>
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-slate-800">Subir Documento con IA</h3>
-                <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm transition-colors">
-                  {loading ? 'Procesando...' : 'Seleccionar archivo'}
-                  <input type="file" accept="image/*,application/pdf" onChange={handleArchivo} className="hidden" disabled={loading} />
-                </label>
-              </div>
-              {mensaje && <div className="p-4 bg-slate-50 rounded-xl mb-4"><p className="text-slate-700">{mensaje}</p></div>}
-              {datosFact && (
-                <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-200">
-                  <h3 className="font-semibold text-emerald-800 mb-3">Datos extraidos por IA:</h3>
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div><p className="text-xs text-slate-500">Cliente/Proveedor</p><p className="font-medium">{datosFact.proveedor}</p></div>
-                    <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium">{datosFact.fecha}</p></div>
-                    <div><p className="text-xs text-slate-500">Valor</p><p className="font-medium text-emerald-700">${datosFact.valor?.toLocaleString()}</p></div>
-                    <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium">${datosFact.iva?.toLocaleString()}</p></div>
-                    <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium">{datosFact.descripcion}</p></div>
-                  </div>
-                  <button onClick={handleGuardar} disabled={guardando} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium">
-                    {guardando ? 'Guardando...' : 'Guardar en ContaBot'}
-                  </button>
-                </div>
-              )}
-            </div>
+          ))}
+          {facturas.length === 0 && <p className="text-xs text-slate-400">Sin actividad reciente</p>}
+        </div>
+      </div>
+    </div>
+
+    {/* Cuentas + Alertas */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSeccion('cobrar')}>
+        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Por Cobrar</p>
+        <p className="text-xl font-bold text-emerald-600">${cuentasPorCobrar.toLocaleString()}</p>
+        <p className="text-xs text-slate-400 mt-1">Facturas pendientes de cobro →</p>
+      </div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSeccion('pagar')}>
+        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Por Pagar</p>
+        <p className="text-xl font-bold text-red-500">${cuentasPorPagar.toLocaleString()}</p>
+        <p className="text-xs text-slate-400 mt-1">Compras y gastos pendientes →</p>
+      </div>
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-red-100 cursor-pointer hover:shadow-md transition-shadow border" onClick={() => setSeccion('alertas')}>
+        <p className="text-xs font-medium text-red-400 uppercase tracking-wide mb-2">Alertas</p>
+        <p className="text-xl font-bold text-red-600">{totalAlertas}</p>
+        <p className="text-xs text-slate-400 mt-1">Vencidas y próximas a vencer →</p>
+      </div>
+    </div>
+
+    {/* Subir documento */}
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-slate-800">Subir Documento con IA</h3>
+        <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm transition-colors font-medium">
+          {loading ? 'Procesando...' : '+ Seleccionar archivo'}
+          <input type="file" accept="image/*,application/pdf" onChange={handleArchivo} className="hidden" disabled={loading} />
+        </label>
+      </div>
+      {mensaje && <div className="p-4 bg-slate-50 rounded-xl mb-4"><p className="text-slate-700 text-sm">{mensaje}</p></div>}
+      {datosFact && (
+        <div className="p-6 bg-emerald-50 rounded-xl border border-emerald-200">
+          <h3 className="font-semibold text-emerald-800 mb-3 text-sm">Datos extraidos por IA:</h3>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div><p className="text-xs text-slate-500">Cliente/Proveedor</p><p className="font-medium text-sm">{datosFact.proveedor}</p></div>
+            <div><p className="text-xs text-slate-500">Fecha</p><p className="font-medium text-sm">{datosFact.fecha}</p></div>
+            <div><p className="text-xs text-slate-500">Valor</p><p className="font-medium text-sm text-emerald-700">${datosFact.valor?.toLocaleString()}</p></div>
+            <div><p className="text-xs text-slate-500">IVA</p><p className="font-medium text-sm">${datosFact.iva?.toLocaleString()}</p></div>
+            <div className="col-span-2"><p className="text-xs text-slate-500">Descripcion</p><p className="font-medium text-sm">{datosFact.descripcion}</p></div>
           </div>
-        )}
+          <button onClick={handleGuardar} disabled={guardando} className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white py-2 rounded-xl font-medium text-sm">
+            {guardando ? 'Guardando...' : 'Guardar en ContaBot'}
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
         {seccion === 'cobrar' && (
           <div>
@@ -536,4 +590,45 @@ export default function Dashboard() {
       )}
     </div>
   )
+  function GraficoIngresosGastos({ facturas }: { facturas: any[] }) {
+  const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts')
+
+  const datos = Array.from({ length: 6 }, (_, i) => {
+    const fecha = new Date()
+    fecha.setMonth(fecha.getMonth() - (5 - i))
+    const mes = fecha.toLocaleString('es-CO', { month: 'short' })
+    const mesNum = fecha.getMonth()
+    const anio = fecha.getFullYear()
+    const ingresos = facturas
+      .filter(f => f.categoria === 'Factura de Venta' && new Date(f.fecha || f.created_at).getMonth() === mesNum && new Date(f.fecha || f.created_at).getFullYear() === anio)
+      .reduce((s, f) => s + (f.valor || 0), 0)
+    const gastos = facturas
+      .filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria) && new Date(f.fecha || f.created_at).getMonth() === mesNum && new Date(f.fecha || f.created_at).getFullYear() === anio)
+      .reduce((s, f) => s + (f.valor || 0), 0)
+    return { mes, ingresos, gastos }
+  })
+
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <AreaChart data={datos} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
+            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+          </linearGradient>
+          <linearGradient id="colorGastos" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15}/>
+            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+        <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
+        <Tooltip formatter={(v: any) => [`$${Number(v).toLocaleString()}`, '']} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }} />
+        <Area type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2} fill="url(#colorIngresos)" name="Ingresos" />
+        <Area type="monotone" dataKey="gastos" stroke="#ef4444" strokeWidth={2} fill="url(#colorGastos)" name="Gastos" />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
 }
