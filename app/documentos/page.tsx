@@ -79,10 +79,6 @@ const [paginaActual, setPaginaActual] = useState(0)
 const [totalPaginas, setTotalPaginas] = useState(0)
 const [procesandoMultiple, setProcesandoMultiple] = useState(false)
 const [resultadosMultiples, setResultadosMultiples] = useState<any[]>([])
-const [paginaActual, setPaginaActual] = useState(0)
-const [totalPaginas, setTotalPaginas] = useState(0)
-const [procesandoMultiple, setProcesandoMultiple] = useState(false)
-const [resultadosMultiples, setResultadosMultiples] = useState<any[]>([])
 
   // ── Formulario manual ──
   const [tipo, setTipo] = useState<TipoDocumento>('factura_compra')
