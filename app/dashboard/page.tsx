@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 const categoriaConfig: Record<string, { color: string }> = {
   'Factura de Venta':     { color: 'bg-green-100 text-green-700' },
@@ -591,8 +592,10 @@ export default function Dashboard() {
     </div>
   )
 }
-  function GraficoIngresosGastos({ facturas }: { facturas: any[] }) {
-  const datos = Array.from({ length: 6 }, (_, i) => {
+ function GraficoIngresosGastos({ facturas }: { facturas: any[] }) {
+  const [vista, setVista] = useState<'meses' | 'dias'>('meses')
+
+  const datosMeses = Array.from({ length: 6 }, (_, i) => {
     const fecha = new Date()
     fecha.setMonth(fecha.getMonth() - (5 - i))
     const mes = fecha.toLocaleString('es-CO', { month: 'short' })
@@ -604,31 +607,66 @@ export default function Dashboard() {
     const gastos = facturas
       .filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria) && new Date(f.fecha || f.created_at).getMonth() === mesNum && new Date(f.fecha || f.created_at).getFullYear() === anio)
       .reduce((s, f) => s + (f.valor || 0), 0)
-    return { mes, ingresos, gastos }
+    return { label: mes, ingresos, gastos }
   })
 
-  const maxVal = Math.max(...datos.map(d => Math.max(d.ingresos, d.gastos)), 1)
+  const datosDias = Array.from({ length: 15 }, (_, i) => {
+    const fecha = new Date()
+    fecha.setDate(fecha.getDate() - (14 - i))
+    const dia = fecha.getDate()
+    const mesNum = fecha.getMonth()
+    const anio = fecha.getFullYear()
+    const ingresos = facturas
+      .filter(f => f.categoria === 'Factura de Venta' && new Date(f.fecha || f.created_at).getDate() === dia && new Date(f.fecha || f.created_at).getMonth() === mesNum && new Date(f.fecha || f.created_at).getFullYear() === anio)
+      .reduce((s, f) => s + (f.valor || 0), 0)
+    const gastos = facturas
+      .filter(f => ['Factura de Compra', 'Gasto', 'Nomina'].includes(f.categoria) && new Date(f.fecha || f.created_at).getDate() === dia && new Date(f.fecha || f.created_at).getMonth() === mesNum && new Date(f.fecha || f.created_at).getFullYear() === anio)
+      .reduce((s, f) => s + (f.valor || 0), 0)
+    return { label: String(dia), ingresos, gastos }
+  })
+
+  const datos = vista === 'meses' ? datosMeses : datosDias
+
+  const formatTooltip = (value: number, name: string) => {
+    return ['$' + value.toLocaleString('es-CO'), name === 'ingresos' ? 'Ingresos' : 'Gastos']
+  }
 
   return (
-    <div className="space-y-3">
-      {datos.map((d, i) => (
-        <div key={i} className="space-y-1">
-          <div className="flex justify-between text-xs text-slate-500">
-            <span className="font-medium">{d.mes}</span>
-            <span className="text-emerald-600">${d.ingresos.toLocaleString()}</span>
-          </div>
-          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(d.ingresos / maxVal) * 100}%` }} />
-          </div>
-          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-red-400 rounded-full" style={{ width: `${(d.gastos / maxVal) * 100}%` }} />
-          </div>
-        </div>
-      ))}
-      <div className="flex gap-4 pt-2">
-        <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-3 h-2 bg-emerald-500 rounded-full inline-block"/>Ingresos</span>
-        <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-3 h-2 bg-red-400 rounded-full inline-block"/>Gastos</span>
+    <div>
+      <div className="flex justify-end mb-3 gap-2">
+        <button onClick={() => setVista('meses')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${vista === 'meses' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+          Meses
+        </button>
+        <button onClick={() => setVista('dias')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${vista === 'dias' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+          Días
+        </button>
       </div>
-   </div>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={datos} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="gradIngresos" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+            </linearGradient>
+            <linearGradient id="gradGastos" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#f87171" stopOpacity={0.2}/>
+              <stop offset="95%" stopColor="#f87171" stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false}/>
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}/>
+          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000000 ? '$' + (v/1000000).toFixed(1) + 'M' : v >= 1000 ? '$' + (v/1000).toFixed(0) + 'k' : '$' + v}/>
+          <Tooltip formatter={formatTooltip} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 600, color: '#1e293b' }}/>
+          <Area type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2.5} fill="url(#gradIngresos)" dot={false} activeDot={{ r: 4, fill: '#10b981' }}/>
+          <Area type="monotone" dataKey="gastos" stroke="#f87171" strokeWidth={2.5} fill="url(#gradGastos)" dot={false} activeDot={{ r: 4, fill: '#f87171' }}/>
+        </AreaChart>
+      </ResponsiveContainer>
+      <div className="flex gap-4 mt-2">
+        <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-3 h-0.5 bg-emerald-500 inline-block rounded-full"/>Ingresos</span>
+        <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className="w-3 h-0.5 bg-red-400 inline-block rounded-full"/>Gastos</span>
+      </div>
+    </div>
   )
 }
