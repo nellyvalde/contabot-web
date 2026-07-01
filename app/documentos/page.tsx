@@ -21,6 +21,7 @@ type Documento = {
   estado: string | null
   estado_conciliacion: EstadoConciliacion
   cuenta_puc: string | null
+  archivo_url?: string | null
 }
 
 type DatosIA = {
@@ -188,7 +189,7 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
       try {
         const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
         const json = await res.json()
-        if (json.success) resultados.push({ pagina: i + 1, datos: json.datos })
+        if (json.success) resultados.push({ pagina: i + 1, datos: json.datos, pdfBlob: blob })
         else resultados.push({ pagina: i + 1, datos: null, error: json.error })
       } catch {
         resultados.push({ pagina: i + 1, datos: null, error: 'Error de conexión' })
@@ -208,13 +209,13 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
         const mismoValor = Math.abs((actual.datos.valor_total || 0) - (siguiente.datos.valor_total || 0)) < 5000
 
         if (esFactura && esComprobante && mismoValor) {
-          registrosFinales.push({ ...actual.datos, ya_pagado: true, paginas: [actual.pagina, siguiente.pagina], fusionado: true })
+        registrosFinales.push({ ...actual.datos, ya_pagado: true, paginas: [actual.pagina, siguiente.pagina], fusionado: true, pdfBlob: actual.pdfBlob })
           i += 2
           continue
         }
       }
 
-      if (actual.datos) registrosFinales.push({ ...actual.datos, paginas: [actual.pagina], fusionado: false })
+        if (actual.datos) registrosFinales.push({ ...actual.datos, paginas: [actual.pagina], fusionado: false, pdfBlob: actual.pdfBlob })
       i++
     }
 
@@ -231,30 +232,103 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
   // ── Guardar resultado OCR ───────────────────────────────────────────────
   // Por qué: mapeamos los campos de la IA a los campos de la tabla documentos
   async function guardarRegistroMultiple(reg: any, idx: number) {
-  if (!empresaActiva?.id) return
+  if (!empresaActiva?.id || !user) return
 
-  const tipoDoc: TipoDocumento =
-    reg.categoria === 'Factura de Venta' ? 'factura_venta'
-    : reg.categoria === 'Nomina' ? 'soporte_nomina'
-    : 'factura_compra'
+  try {
+    // 1. Subir PDF a Supabase Storage
+    let archivoUrl = null
+    if (reg.pdfBlob) {
+      const nombreArchivo = `${empresaActiva.id}/${Date.now()}_pag${reg.paginas?.[0] || 1}.pdf`
+      const { error: storageError } = await supabase.storage
+        .from('facturas')
+        .upload(nombreArchivo, reg.pdfBlob, { contentType: 'application/pdf' })
+      if (!storageError) {
+        const { data: urlData } = supabase.storage.from('facturas').getPublicUrl(nombreArchivo)
+        archivoUrl = urlData.publicUrl
+      }
+    }
 
-  const { error: e } = await supabase.from('documentos').insert({
-    empresa_id: empresaActiva.id,
-    tipo: tipoDoc,
-    numero_documento: reg.numero_documento || null,
-    proveedor_cliente: reg.proveedor || null,
-    descripcion: reg.descripcion || null,
-    fecha_emision: reg.fecha_emision || reg.fecha || null,
-    valor: reg.valor_total || reg.valor || 0,
-    iva: reg.iva || 0,
-    cuenta_puc: reg.cuenta_puc || null,
-    estado_conciliacion: reg.ya_pagado ? 'conciliado' : 'pendiente',
-    estado: reg.ya_pagado ? 'Pagado' : 'Pendiente',
-  })
+    // 2. Ruta según tipo de documento
+    if (reg.categoria === 'Comprobante de Nomina') {
+      // Buscar empleado por nombre o valor
+      const nombreBeneficiario = (reg.proveedor || '').toUpperCase()
+      const valorBuscado = reg.valor_total || reg.valor || 0
 
-  if (e) { setError(`Error guardando: ${e.message}`); return }
-  setResultadosMultiples(prev => prev.filter((_, i) => i !== idx))
-  await cargarDocumentos()
+      let empleadoMatch = null
+
+      // Buscar por nombre
+      if (nombreBeneficiario) {
+        const { data: empData } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('empresa_id', empresaActiva.id)
+          .ilike('nombre_empleado', `%${nombreBeneficiario.split(' ')[0]}%`)
+          .maybeSingle()
+        empleadoMatch = empData
+      }
+
+      // Si no encontró por nombre, buscar por valor
+      if (!empleadoMatch && valorBuscado > 0) {
+        const { data: empValor } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('empresa_id', empresaActiva.id)
+          .eq('neto_pagar', valorBuscado)
+          .maybeSingle()
+        empleadoMatch = empValor
+      }
+
+      if (empleadoMatch) {
+        await supabase
+          .from('nomina_programada')
+          .update({ estado: 'Pagado', archivo_url: archivoUrl || 'subido' })
+          .eq('id', empleadoMatch.id)
+      } else {
+        // No encontró empleado — guardar en documentos igual
+        await supabase.from('documentos').insert({
+          empresa_id: empresaActiva.id,
+          tipo: 'soporte_nomina',
+          proveedor_cliente: reg.proveedor || null,
+          descripcion: reg.descripcion || 'Comprobante de nómina — empleado no encontrado',
+          fecha_emision: reg.fecha_emision || reg.fecha || null,
+          valor: reg.valor_total || reg.valor || 0,
+          iva: reg.iva || 0,
+          cuenta_puc: '510506',
+          estado_conciliacion: 'pendiente',
+          estado: 'Pendiente',
+          archivo_url: archivoUrl,
+        })
+      }
+    } else {
+      // Factura de Venta, Compra, Gasto, Extracto, Peaje, etc.
+      const tipoDoc: TipoDocumento =
+        reg.categoria === 'Factura de Venta' ? 'factura_venta'
+        : reg.categoria === 'Nomina' ? 'soporte_nomina'
+        : reg.categoria === 'Extracto Bancario' ? 'otro'
+        : 'factura_compra'
+
+      await supabase.from('documentos').insert({
+        empresa_id: empresaActiva.id,
+        tipo: tipoDoc,
+        numero_documento: reg.numero_documento || null,
+        proveedor_cliente: reg.proveedor || null,
+        descripcion: reg.descripcion || null,
+        fecha_emision: reg.fecha_emision || reg.fecha || null,
+        valor: reg.valor_total || reg.valor || 0,
+        iva: reg.iva || 0,
+        cuenta_puc: reg.cuenta_puc || null,
+        estado_conciliacion: reg.ya_pagado ? 'conciliado' : 'pendiente',
+        estado: reg.ya_pagado ? 'Pagado' : 'Pendiente',
+        archivo_url: archivoUrl,
+      })
+    }
+
+    setResultadosMultiples(prev => prev.filter((_, i) => i !== idx))
+    await cargarDocumentos()
+
+  } catch (err: any) {
+    setError(`Error guardando: ${err.message}`)
+  }
 }
   async function guardarDesdeIA() {
     if (!datosIA || !empresaActiva?.id) return
