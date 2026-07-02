@@ -189,7 +189,7 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
       try {
         const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
         const json = await res.json()
-        if (json.success) resultados.push({ pagina: i + 1, datos: json.datos, pdfBlob: blob })
+      if (json.success) resultados.push({ pagina: i + 1, datos: json.datos, pdfBase64: await blob.arrayBuffer().then(b => Buffer.from(b).toString('base64')) })
         else resultados.push({ pagina: i + 1, datos: null, error: json.error })
       } catch {
         resultados.push({ pagina: i + 1, datos: null, error: 'Error de conexión' })
@@ -209,13 +209,13 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
         const mismoValor = Math.abs((actual.datos.valor_total || 0) - (siguiente.datos.valor_total || 0)) < 5000
 
         if (esFactura && esComprobante && mismoValor) {
-        registrosFinales.push({ ...actual.datos, ya_pagado: true, paginas: [actual.pagina, siguiente.pagina], fusionado: true, pdfBlob: actual.pdfBlob })
+        registrosFinales.push({ ...actual.datos, ya_pagado: true, paginas: [actual.pagina, siguiente.pagina], fusionado: true, pdfBase64: actual.pdfBase64 })
           i += 2
           continue
         }
       }
 
-        if (actual.datos) registrosFinales.push({ ...actual.datos, paginas: [actual.pagina], fusionado: false, pdfBlob: actual.pdfBlob })
+        if (actual.datos) registrosFinales.push({ ...actual.datos, paginas: [actual.pagina], fusionado: false, pdfBase64: actual.pdfBase64 })
       i++
     }
 
@@ -245,11 +245,12 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
   try {
     // 1. Subir PDF a Supabase Storage
     let archivoUrl = null
-    if (reg.pdfBlob) {
-      const nombreArchivo = `${empresaActiva.id}/${Date.now()}_pag${reg.paginas?.[0] || 1}.pdf`
-      const { error: storageError } = await supabase.storage
-        .from('facturas')
-        .upload(nombreArchivo, reg.pdfBlob, { contentType: 'application/pdf' })
+    if (reg.pdfBase64) {
+  const nombreArchivo = `${empresaActiva.id}/${Date.now()}_pag${reg.paginas?.[0] || 1}.pdf`
+  const pdfBytes = Uint8Array.from(atob(reg.pdfBase64), c => c.charCodeAt(0))
+  const { error: storageError } = await supabase.storage
+    .from('facturas')
+    .upload(nombreArchivo, pdfBytes, { contentType: 'application/pdf' })
       if (!storageError) {
         const { data: urlData } = supabase.storage.from('facturas').getPublicUrl(nombreArchivo)
         archivoUrl = urlData.publicUrl
