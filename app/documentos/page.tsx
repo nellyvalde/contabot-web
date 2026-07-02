@@ -68,7 +68,7 @@ function DocumentosContenido() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<EstadoConciliacion | 'todos'>('todos')
-  const [tabActiva, setTabActiva] = useState<'pendientes' | 'ventas' | 'compras'>('pendientes')
+  const [tabActiva, setTabActiva] = useState<'pendientes' | 'procesados'>('pendientes')
 
   // ── Estados OCR ──
   // ── Estados OCR ──
@@ -441,21 +441,12 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
 }
 const documentosPorTab = useMemo(() => {
   switch (tabActiva) {
-    case 'ventas':
-      return documentos.filter(d => d.tipo === 'factura_venta')
-    case 'compras':
-      return documentos.filter(d =>
-        d.tipo === 'factura_compra' ||
-        d.tipo === 'comprobante_egreso' ||
-        d.tipo === 'otro' ||
-        d.tipo === 'soporte_nomina'
-      )
+    case 'procesados':
+      return documentos.filter(d => d.estado_conciliacion === 'conciliado')
     default:
-      // Por Procesar = pendientes que NO son ventas ni compras clasificadas
       return documentos.filter(d => d.estado_conciliacion === 'pendiente')
   }
 }, [documentos, tabActiva])
-
 const documentosFiltrados = useMemo(() => {
   if (filtroEstado === 'todos') return documentosPorTab
   return documentosPorTab.filter((d) => d.estado_conciliacion === filtroEstado)
@@ -693,10 +684,9 @@ const documentosFiltrados = useMemo(() => {
             <div className="rounded-2xl bg-white p-6 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex gap-2 mb-2">
-  {[
+ {[
     { id: 'pendientes', label: '📥 Por Procesar' },
-    { id: 'ventas',     label: '💰 Ventas' },
-    { id: 'compras',    label: '💸 Compras y Gastos' },
+    { id: 'procesados', label: '✅ Procesados' },
   ].map(tab => (
     <button key={tab.id} onClick={() => setTabActiva(tab.id as any)}
       className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
