@@ -820,7 +820,6 @@ const documentosFiltrados = useMemo(() => {
             </div>
           </div>
 
-        </div>
       </main>
     </div>
   )
