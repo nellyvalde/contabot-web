@@ -231,11 +231,13 @@ const blob = new Blob([bytesPagena.buffer as ArrayBuffer], { type: 'application/
 }
   // ── Guardar resultado OCR ───────────────────────────────────────────────
   // Por qué: mapeamos los campos de la IA a los campos de la tabla documentos
-  async function guardarTodos() {
-  for (let i = 0; i < resultadosMultiples.length; i++) {
-    await guardarRegistroMultiple(resultadosMultiples[0], 0)
+ async function guardarTodos() {
+  const total = resultadosMultiples.length
+  const copia = [...resultadosMultiples]
+  for (let i = 0; i < copia.length; i++) {
+    await guardarRegistroMultiple(copia[i], 0)
   }
-  setMensajeExito(`✅ ${resultadosMultiples.length} documentos guardados correctamente`)
+  setMensajeExito(`✅ ${total} documentos guardados correctamente`)
 }
   async function guardarRegistroMultiple(reg: any, idx: number) {
   if (!empresaActiva?.id || !user) return
