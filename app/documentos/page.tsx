@@ -437,8 +437,13 @@ const documentosPorTab = useMemo(() => {
   switch (tabActiva) {
     case 'ventas':
       return documentos.filter(d => d.tipo === 'factura_venta')
-    case 'compras':
-      return documentos.filter(d => d.tipo === 'factura_compra' || d.tipo === 'comprobante_egreso')
+   case 'compras':
+  return documentos.filter(d => 
+    d.tipo === 'factura_compra' || 
+    d.tipo === 'comprobante_egreso' ||
+    d.tipo === 'otro' ||
+    d.tipo === 'soporte_nomina'
+  )
     default:
       return documentos.filter(d => d.estado_conciliacion === 'pendiente')
   }
