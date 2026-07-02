@@ -31,8 +31,8 @@ const menuGroups: MenuGroup[] = [
   {
     titulo: 'REGISTROS',
     items: [
-      { id: 'clientes',    icon: <Receipt size={16}/>,      label: 'Ventas',          href: '/clientes' },
-      { id: 'proveedores', icon: <ShoppingCart size={16}/>, label: 'Compras y Gastos',href: '/proveedores' },
+     { id: 'ventas',    icon: <Receipt size={16}/>,      label: 'Ventas',          href: '/ventas' },
+{ id: 'compras',   icon: <ShoppingCart size={16}/>, label: 'Compras y Gastos',href: '/compras' },
       { id: 'nomina',      icon: <Users size={16}/>,        label: 'Nómina',          href: '/nomina' },
     ]
   },
@@ -71,7 +71,8 @@ export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps
     if (pathname === '/cobrar') return 'cobrar'
     if (pathname === '/pagar') return 'pagar'
     if (pathname === '/alertas') return 'alertas'
-    if (pathname === '/clientes') return 'clientes'
+    if (pathname === '/ventas') return 'ventas'
+if (pathname === '/compras') return 'compras'
     if (pathname === '/proveedores') return 'proveedores'
     if (pathname === '/configuracion') return 'configuracion'
     if (pathname === '/dashboard') return 'dashboard'
@@ -82,8 +83,8 @@ export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps
   const colorActivo: Record<string, string> = {
     dashboard:   'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
     documentos:  'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
-    clientes:    'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
-    proveedores: 'bg-red-500/20 text-red-400 border border-red-500/30',
+   ventas:  'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
+compras: 'bg-red-500/20 text-red-400 border border-red-500/30',
     nomina:      'bg-red-500/20 text-red-400 border border-red-500/30',
     cobrar:      'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
     pagar:       'bg-red-500/20 text-red-400 border border-red-500/30',

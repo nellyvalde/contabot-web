@@ -380,8 +380,13 @@ const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
     })
 
     if (e) {
-      setError(`Error guardando: ${e.message}`)
-    } else {
+  if (e.code === '23505') {
+    setError('⚠️ Este documento ya se encuentra registrado en el sistema y no puede ser duplicado.')
+  } else {
+    setError(`Error guardando: ${e.message}`)
+  }
+  return
+}
       setMensajeExito('✅ Documento guardado correctamente')
       setDatosIA(null)
       await cargarDocumentos()
@@ -438,14 +443,15 @@ const documentosPorTab = useMemo(() => {
   switch (tabActiva) {
     case 'ventas':
       return documentos.filter(d => d.tipo === 'factura_venta')
-   case 'compras':
-  return documentos.filter(d => 
-    d.tipo === 'factura_compra' || 
-    d.tipo === 'comprobante_egreso' ||
-    d.tipo === 'otro' ||
-    d.tipo === 'soporte_nomina'
-  )
+    case 'compras':
+      return documentos.filter(d =>
+        d.tipo === 'factura_compra' ||
+        d.tipo === 'comprobante_egreso' ||
+        d.tipo === 'otro' ||
+        d.tipo === 'soporte_nomina'
+      )
     default:
+      // Por Procesar = pendientes que NO son ventas ni compras clasificadas
       return documentos.filter(d => d.estado_conciliacion === 'pendiente')
   }
 }, [documentos, tabActiva])
