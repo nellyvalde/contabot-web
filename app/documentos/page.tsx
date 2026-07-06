@@ -263,7 +263,9 @@ function DocumentosContenido() {
           numero_documento: reg.numero_documento || null, proveedor_cliente: reg.proveedor || null,
           descripcion: reg.descripcion || null, fecha_emision: reg.fecha_emision || reg.fecha || null,
           valor: reg.valor_total || reg.valor || 0, iva: reg.iva || 0, cuenta_puc: reg.cuenta_puc || null,
-          estado_conciliacion: reg.ya_pagado ? 'conciliado' : 'pendiente', estado: reg.ya_pagado ? 'Pagado' : 'Pendiente', archivo_url: archivoUrl,
+        estado_conciliacion: reg.categoria === 'Nomina' ? 'pendiente' : 'conciliado',
+estado: reg.categoria === 'Nomina' ? 'Pendiente' : 'Pagado',
+archivo_url: archivoUrl,
         })
         if (e) {
           if (e.code === '23505') setError('⚠️ Este documento ya se encuentra registrado en el sistema y no puede ser duplicado.')
