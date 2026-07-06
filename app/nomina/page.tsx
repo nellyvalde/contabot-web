@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 // app/nomina/page.tsx — UI refactorizada estilo Linear/Notion
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
@@ -130,7 +130,7 @@ function NominaContenido() {
     const f=ev.target.files?.[0]; ev.target.value=''; if (!f||!user?.id) return
     setImportando(true); setError(null); setMensajeImportacion(null)
     try {
-      const filas=await parseExcelNomina(f); const r=await guardarNominaProgramada(filas,user.id,periodoContable)
+      const filas=await parseExcelNomina(f); const r=await guardarNominaProgramada(filas,user.id,periodoContable,empresaActiva!.id)
       const p=[`${r.filasInsertadas} nuevo(s), ${r.filasActualizadas} actualizado(s).`]
       if (r.filasOmitidas.length>0) p.push(`${r.filasOmitidas.length} omitida(s).`)
       if (r.alertasUgpp.length>0) p.push(`⚠️ Riesgo UGPP: ${r.alertasUgpp.map(a=>a.nombre).join(', ')}.`)
@@ -143,8 +143,8 @@ function NominaContenido() {
     const f=ev.target.files?.[0]; ev.target.value=''; if (!f) return
     setConciliando(true); setError(null); setMensajeConciliacion(null)
     try {
-      const pend: RegistroPendiente[]=nominaProgramada.filter(f=>f.estado==='Pendiente de Pago').map(f=>({ id:f.id, nombreEmpleado:f.nombreEmpleado, netoPagar:f.netoPagar }))
-      const r=await conciliarExtractoPdf(f,pend)
+      const pend: RegistroPendiente[]=nominaProgramada.filter(f=>f.estado==='Pendiente de Pago').map(f=>({ id:f.id, nombreEmpleado:f.nombreEmpleado, netoPagar:f.netoPagar, cedula:f.cedula }))
+      const r=await conciliarExtractoPdf(f,pend,user?.id,empresaActiva!.id)
       setMensajeConciliacion(`${r.matches.length} conciliado(s). ${r.registrosSinMatch.length} sin coincidencia.`)
       await cargarNominaProgramada(periodoContable)
     } catch(err) { setError(err instanceof Error?err.message:'Error procesando PDF.') }

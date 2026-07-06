@@ -1,4 +1,4 @@
-﻿// lib/nomina/importarExcel.ts
+// lib/nomina/importarExcel.ts
 // Normalizador Semantico Inteligente para importacion de nomina v4
 
 import * as XLSX from 'xlsx'
@@ -121,7 +121,7 @@ export async function parseExcelNomina(archivo: File): Promise<any[]> {
   return filas
 }
 
-export async function guardarNominaProgramada(filas: any[], userId: string, periodoContable: string): Promise<{ filasInsertadas: number; filasActualizadas: number; filasOmitidas: { cedula: string; motivo: string }[]; alertasUgpp: { nombre: string; excesoLey1393: number }[] }> {
+export async function guardarNominaProgramada(filas: any[], userId: string, periodoContable: string, empresaId?: string): Promise<{ filasInsertadas: number; filasActualizadas: number; filasOmitidas: { cedula: string; motivo: string }[]; alertasUgpp: { nombre: string; excesoLey1393: number }[] }> {
   const filasOmitidas: { cedula: string; motivo: string }[] = []
   const alertasUgpp: { nombre: string; excesoLey1393: number }[] = []
   let filasInsertadas = 0
@@ -132,7 +132,7 @@ export async function guardarNominaProgramada(filas: any[], userId: string, peri
       const liquidacion = liquidarNomina(fila.conceptos)
       if (liquidacion.excesoLey1393 > 0) alertasUgpp.push({ nombre: fila.nombre, excesoLey1393: liquidacion.excesoLey1393 })
       const netoPagar = Math.round(fila.netoExplicito ?? liquidacion.netoAPagar)
-      const registro = {
+      const registro: any = {
         user_id: userId, nombre_empleado: fila.nombre, cedula: fila.cedula, area: fila.area || null,
         sueldo_base: fila.conceptos.sueldoBase, auxilio_transporte: fila.conceptos.auxilioTransporte,
         dias_trabajados: fila.diasTrabajados ?? 30, bonificaciones: fila.conceptos.bonificaciones,
@@ -149,7 +149,16 @@ export async function guardarNominaProgramada(filas: any[], userId: string, peri
         cuenta_puc_bonos: CUENTAS_PUC_NOMINA.bonos, cuenta_puc_prima: CUENTAS_PUC_NOMINA.prima,
         exceso_ley_1393: liquidacion.excesoLey1393, alerta_riesgo_ugpp: liquidacion.excesoLey1393 > 0,
       }
-      const { data: existente } = await supabase.from('nomina_programada').select('id, estado').eq('user_id', userId).eq('cedula', fila.cedula).eq('periodo_contable', periodoContable).maybeSingle()
+      if (empresaId) {
+        registro.empresa_id = empresaId
+      }
+
+      let query = supabase.from('nomina_programada').select('id, estado').eq('user_id', userId).eq('cedula', fila.cedula).eq('periodo_contable', periodoContable)
+      if (empresaId) {
+        query = query.eq('empresa_id', empresaId)
+      }
+      const { data: existente } = await query.maybeSingle()
+
       if (existente) {
         const estadoFinal = existente.estado === 'Pagado' ? 'Pagado' : 'Pendiente de Pago'
         const { error } = await supabase.from('nomina_programada').update({ ...registro, estado: estadoFinal }).eq('id', existente.id)
