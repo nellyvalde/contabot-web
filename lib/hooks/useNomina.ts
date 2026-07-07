@@ -1,7 +1,10 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { useUser } from '@/lib/hooks/useUser'
+
+export type EstadoPago = 'Pendiente de Pago' | 'Pagado'
+export type MetodoConciliacion = 'manual' | 'automatico_valor' | 'automatico_nombre' | null
 
 export type FilaNomina = {
   id: number
@@ -23,8 +26,8 @@ export type FilaNomina = {
   netoPagar: number
   excesoLey1393: number
   alertaRiesgoUgpp: boolean
-  estado: 'Pendiente de Pago' | 'Pagado'
-  metodoConciliacion: 'manual' | 'automatico_valor' | null
+  estado: EstadoPago
+  metodoConciliacion: MetodoConciliacion
 }
 
 export function useNomina(periodoContable: string) {
@@ -34,54 +37,95 @@ export function useNomina(periodoContable: string) {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!user?.id || !empresaActiva?.id || !periodoContable) return
-    cargar()
-  }, [user?.id, empresaActiva?.id, periodoContable])
+  const cargar = useCallback(async () => {
+    if (!user?.id || !empresaActiva?.id || !periodoContable) {
+      setFilas([])
+      setCargando(false)
+      return
+    }
 
-  async function cargar() {
     setCargando(true)
     setError(null)
+
     const { data, error: e } = await supabase
       .from('nomina_programada')
       .select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion')
-      .eq('empresa_id', empresaActiva!.id)
+      .eq('empresa_id', empresaActiva.id)
       .eq('periodo_contable', periodoContable)
       .order('nombre_empleado')
 
-    if (e) { setError(`Error: ${e.message}`); setCargando(false); return }
+    if (e) {
+      setError(`Error: ${e.message}`)
+      setCargando(false)
+      return
+    }
 
     setFilas((data ?? []).map((f: any) => ({
-      id: f.id, nombreEmpleado: f.nombre_empleado, cedula: f.cedula, area: f.area,
-      sueldoBase: Number(f.sueldo_base ?? 0), cuentaPucBasico: f.cuenta_puc_basico ?? '510506',
-      auxilioTransporte: Number(f.auxilio_transporte ?? 0), cuentaPucTransporte: f.cuenta_puc_transporte ?? '510527',
-      bonificaciones: Number(f.bonificaciones ?? 0), cuentaPucBonos: f.cuenta_puc_bonos ?? '510530',
-      prima: Number(f.prima ?? 0), cuentaPucPrima: f.cuenta_puc_prima ?? '514015',
-      abonoPrima: Number(f.abono_prima ?? 0), cesantias: Number(f.cesantias ?? 0),
-      abonoCesantias: Number(f.abono_cesantias ?? 0), abonoLiquidacion: Number(f.abono_liquidacion ?? 0),
-      netoPagar: Number(f.neto_pagar ?? 0), excesoLey1393: Number(f.exceso_ley_1393 ?? 0),
-      alertaRiesgoUgpp: Boolean(f.alerta_riesgo_ugpp), estado: f.estado,
-      metodoConciliacion: f.metodo_conciliacion,
+      id: f.id,
+      nombreEmpleado: f.nombre_empleado,
+      cedula: f.cedula,
+      area: f.area,
+      sueldoBase: Number(f.sueldo_base ?? 0),
+      cuentaPucBasico: f.cuenta_puc_basico ?? '510506',
+      auxilioTransporte: Number(f.auxilio_transporte ?? 0),
+      cuentaPucTransporte: f.cuenta_puc_transporte ?? '510527',
+      bonificaciones: Number(f.bonificaciones ?? 0),
+      cuentaPucBonos: f.cuenta_puc_bonos ?? '510530',
+      prima: Number(f.prima ?? 0),
+      cuentaPucPrima: f.cuenta_puc_prima ?? '514015',
+      abonoPrima: Number(f.abono_prima ?? 0),
+      cesantias: Number(f.cesantias ?? 0),
+      abonoCesantias: Number(f.abono_cesantias ?? 0),
+      abonoLiquidacion: Number(f.abono_liquidacion ?? 0),
+      netoPagar: Number(f.neto_pagar ?? 0),
+      excesoLey1393: Number(f.exceso_ley_1393 ?? 0),
+      alertaRiesgoUgpp: Boolean(f.alerta_riesgo_ugpp),
+      estado: f.estado ?? 'Pendiente de Pago',
+      metodoConciliacion: f.metodo_conciliacion ?? null,
     })))
     setCargando(false)
-  }
+  }, [empresaActiva?.id, periodoContable, user?.id])
+
+  useEffect(() => {
+    void cargar()
+  }, [cargar])
 
   async function limpiarPeriodo() {
     if (!empresaActiva?.id) return
-    const { error: e } = await supabase.from('nomina_programada').delete()
-      .eq('empresa_id', empresaActiva.id).eq('periodo_contable', periodoContable)
+    const { error: e } = await supabase
+      .from('nomina_programada')
+      .delete()
+      .eq('empresa_id', empresaActiva.id)
+      .eq('periodo_contable', periodoContable)
+
     if (e) throw new Error(e.message)
     setFilas([])
   }
 
-  async function togglePago(id: number) {
-    const fila = filas.find(f => f.id === id)
+  async function togglePago(id: number, overrides?: { estado?: EstadoPago; metodoConciliacion?: MetodoConciliacion; referenciaConciliacion?: string | null }) {
+    const fila = filas.find((item) => item.id === id)
     if (!fila) return
-    const nuevo = fila.estado === 'Pagado' ? 'Pendiente de Pago' : 'Pagado'
-    const { error: e } = await supabase.from('nomina_programada')
-      .update({ estado: nuevo, metodo_conciliacion: 'manual' }).eq('id', id)
+
+    const nuevoEstado = overrides?.estado ?? (fila.estado === 'Pagado' ? 'Pendiente de Pago' : 'Pagado')
+    const metodo = overrides?.metodoConciliacion ?? 'manual'
+
+    const updates: Record<string, unknown> = {
+      estado: nuevoEstado,
+      metodo_conciliacion: metodo,
+    }
+
+    if (overrides?.referenciaConciliacion !== undefined) {
+      updates.referencia_conciliacion = overrides.referenciaConciliacion
+    }
+
+    const { error: e } = await supabase
+      .from('nomina_programada')
+      .update(updates)
+      .eq('id', id)
+
     if (e) throw new Error(e.message)
-    setFilas(prev => prev.map(f => f.id === id ? { ...f, estado: nuevo as any, metodoConciliacion: 'manual' } : f))
+
+    setFilas((prev) => prev.map((item) => item.id === id ? { ...item, estado: nuevoEstado, metodoConciliacion: metodo } : item))
   }
 
   return { filas, cargando, error, cargar, limpiarPeriodo, togglePago }

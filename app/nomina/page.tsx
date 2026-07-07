@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase/client'
 import { liquidarNomina, type RiesgoARL } from '@/lib/nomina/calculo'
 import { parseExcelNomina, guardarNominaProgramada } from '@/lib/nomina/importarExcel'
 import { conciliarExtractoPdf, type RegistroPendiente } from '@/lib/nomina/conciliacionBancaria'
+import { useNomina, type MetodoConciliacion } from '@/lib/hooks/useNomina'
 
 type Empleado = {
   id: string; empresa_id: string; nombre: string; cedula: string
@@ -22,7 +23,7 @@ type FilaNominaProgramada = {
   bonificaciones: number; cuentaPucBonos: string; prima: number; cuentaPucPrima: string
   abonoPrima: number; cesantias: number; abonoCesantias: number; abonoLiquidacion: number
   netoPagar: number; excesoLey1393: number; alertaRiesgoUgpp: boolean
-  estado: EstadoPago; metodoConciliacion: 'manual' | 'automatico_valor' | null
+  estado: EstadoPago; metodoConciliacion: MetodoConciliacion
 }
 
 const NOMBRES_MES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -67,8 +68,6 @@ function NominaContenido() {
   const [error, setError] = useState<string|null>(null)
   const [periodoMes, setPeriodoMes] = useState(hoy.getMonth()+1)
   const [periodoAnio, setPeriodoAnio] = useState(hoy.getFullYear())
-  const [nominaProgramada, setNominaProgramada] = useState<FilaNominaProgramada[]>([])
-  const [cargandoProgramada, setCargandoProgramada] = useState(false)
   const [importando, setImportando] = useState(false)
   const [conciliando, setConciliando] = useState(false)
   const [mensajeImportacion, setMensajeImportacion] = useState<string|null>(null)
@@ -79,8 +78,9 @@ function NominaContenido() {
   const periodoContable = useMemo(() => construirPeriodoContable(periodoMes, periodoAnio), [periodoMes, periodoAnio])
 
   const { empresaActiva } = useEmpresa()
+  const { filas: nominaProgramada, cargando: cargandoProgramada, error: errorNomina, cargar: cargarNominaProgramada, limpiarPeriodo: limpiarPeriodoNomina, togglePago: togglePagoNomina } = useNomina(periodoContable)
+
   useEffect(() => { if (empresaActiva?.id) cargarDatos() }, [empresaActiva?.id])
-  useEffect(() => { if (user?.id && empresaActiva?.id) { setNominaProgramada([]); cargarNominaProgramada(periodoContable) } }, [user?.id, periodoContable, empresaActiva?.id])
   async function cargarDatos() {
     setCargando(true); setError(null)
     if (!empresaActiva?.id) { setCargando(false); return }
@@ -88,15 +88,6 @@ function NominaContenido() {
     const { data, error: e2 } = await supabase.from('empleados').select('id,empresa_id,nombre,cedula,puesto,salario_base,riesgo_arl,activo').eq('empresa_id', empresaActiva.id).order('nombre')
     if (e2) setError(`Error: ${e2.message}`); else setEmpleados(data ?? [])
     setCargando(false)
-  }
-
-  async function cargarNominaProgramada(periodo: string) {
-    if (!user?.id) return
-    setCargandoProgramada(true)
-    const { data, error: e } = await supabase.from('nomina_programada').select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion').eq('user_id', user.id).eq('empresa_id', empresaActiva!.id).eq('periodo_contable', periodo).order('nombre_empleado')
-    if (e) { setError(`Error: ${e.message}`); setCargandoProgramada(false); return }
-    setNominaProgramada((data ?? []).map((f: any) => ({ id:f.id, nombreEmpleado:f.nombre_empleado, cedula:f.cedula, area:f.area, sueldoBase:Number(f.sueldo_base??0), cuentaPucBasico:f.cuenta_puc_basico??'510506', auxilioTransporte:Number(f.auxilio_transporte??0), cuentaPucTransporte:f.cuenta_puc_transporte??'510527', bonificaciones:Number(f.bonificaciones??0), cuentaPucBonos:f.cuenta_puc_bonos??'510530', prima:Number(f.prima??0), cuentaPucPrima:f.cuenta_puc_prima??'514015', abonoPrima:Number(f.abono_prima??0), cesantias:Number(f.cesantias??0), abonoCesantias:Number(f.abono_cesantias??0), abonoLiquidacion:Number(f.abono_liquidacion??0), netoPagar:Number(f.neto_pagar??0), excesoLey1393:Number(f.exceso_ley_1393??0), alertaRiesgoUgpp:Boolean(f.alerta_riesgo_ugpp), estado:f.estado, metodoConciliacion:f.metodo_conciliacion })))
-    setCargandoProgramada(false)
   }
 
   const totalNomina = useMemo(() => empleados.reduce((s,e) => s+e.salario_base,0), [empleados])
@@ -134,7 +125,7 @@ function NominaContenido() {
       const p=[`${r.filasInsertadas} nuevo(s), ${r.filasActualizadas} actualizado(s).`]
       if (r.filasOmitidas.length>0) p.push(`${r.filasOmitidas.length} omitida(s).`)
       if (r.alertasUgpp.length>0) p.push(`⚠️ Riesgo UGPP: ${r.alertasUgpp.map(a=>a.nombre).join(', ')}.`)
-      setMensajeImportacion(p.join(' ')); await cargarNominaProgramada(periodoContable)
+      setMensajeImportacion(p.join(' ')); await cargarNominaProgramada()
     } catch(err) { setError(err instanceof Error?err.message:'Error importando.') }
     finally { setImportando(false) }
   }
@@ -145,8 +136,11 @@ function NominaContenido() {
     try {
       const pend: RegistroPendiente[]=nominaProgramada.filter(f=>f.estado==='Pendiente de Pago').map(f=>({ id:f.id, nombreEmpleado:f.nombreEmpleado, netoPagar:f.netoPagar, cedula:f.cedula }))
       const r=await conciliarExtractoPdf(f,pend,user?.id,empresaActiva!.id)
-      setMensajeConciliacion(`${r.matches.length} conciliado(s). ${r.registrosSinMatch.length} sin coincidencia.`)
-      await cargarNominaProgramada(periodoContable)
+      const resumen = r.matches.length > 0
+        ? `${r.matches.length} conciliado(s). ${r.registrosSinMatch.length} sin coincidencia.`
+        : `No se encontró una coincidencia válida en el extracto.`
+      setMensajeConciliacion(resumen)
+      await cargarNominaProgramada()
     } catch(err) { setError(err instanceof Error?err.message:'Error procesando PDF.') }
     finally { setConciliando(false) }
   }
@@ -155,24 +149,21 @@ function NominaContenido() {
     if (!user?.id) return
     const confirmar = window.confirm(`¿Seguro que deseas eliminar todos los registros de nomina de ${NOMBRES_MES[periodoMes-1]} ${periodoAnio}? Esta accion no borra empleados y no se puede deshacer.`)
     if (!confirmar) return
-    const { error: e } = await supabase
-      .from('nomina_programada')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('empresa_id', empresaActiva!.id)
-      .eq('periodo_contable', periodoContable)
-    if (e) { setError(`Error al limpiar: ${e.message}`); return }
-    setNominaProgramada([])
-    setMensajeImportacion('Datos del mes eliminados correctamente.')
-    setMensajeConciliacion(null)
+    try {
+      await limpiarPeriodoNomina()
+      setMensajeImportacion('Datos del mes eliminados correctamente.')
+      setMensajeConciliacion(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al limpiar.')
+    }
   }
 
   async function togglePagoManual(id: number) {
-    const f=nominaProgramada.find(f=>f.id===id); if (!f) return
-    const nuevo: EstadoPago=f.estado==='Pagado'?'Pendiente de Pago':'Pagado'
-    const { error: e }=await supabase.from('nomina_programada').update({ estado:nuevo, metodo_conciliacion:'manual' }).eq('id',id)
-    if (e) { setError(e.message); return }
-    setNominaProgramada(p=>p.map(f=>f.id===id?{...f,estado:nuevo,metodoConciliacion:'manual'}:f))
+    try {
+      await togglePagoNomina(id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error actualizando el pago.')
+    }
   }
 
   if (!user) return <div className="min-h-screen bg-[#f8f9fb] flex items-center justify-center"><span className="animate-spin w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full"/></div>
@@ -200,7 +191,7 @@ function NominaContenido() {
                 {liquidando?'Liquidando...':`Liquidar aportes — ${NOMBRES_MES[periodoMes-1]} ${periodoAnio}`}
               </button>
             </div>
-            {error&&<AlertaBanner mensaje={error} tipo="error"/>}
+            {(error || errorNomina) && <AlertaBanner mensaje={error || errorNomina || ''} tipo="error"/>}
           </Card>
 
           <Card>

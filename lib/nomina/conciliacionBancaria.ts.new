@@ -1,21 +1,10 @@
 // lib/nomina/conciliacionBancaria.ts
 //
-// Conciliación bancaria por "Match por Valor": el extracto de un banco
-// (ej. AV Villas) casi nunca trae el nombre exacto del empleado tal como
-// está en tu nómina (puede salir a nombre de un tercero, de la esposa,
-// con el nombre truncado, etc.). Lo que SÍ es exacto y verificable es el
-// valor depositado. Esta función extrae todos los valores numéricos del
-// PDF y los cruza contra los registros de `nomina_programada` que sigan
-// en "Pendiente de pago": si el valor coincide exactamente con `neto_pagar`,
-// se marca como "Pagado" automáticamente.
-//
-// Requiere la librería 'pdfjs-dist':
-//
-//   npm install pdfjs-dist
-//
-// ⚠️ Esto funciona con PDFs que tienen texto seleccionable. Si el PDF es
-// una imagen escaneada, esta función no encontrará texto y se debe pasar
-// primero por OCR (pendiente del README).
+// Conciliación bancaria autónoma por valor y contexto.
+// El extracto del banco puede venir con nombres truncados o terceros, pero
+// el valor neto del pago es la señal más fiable para cerrar la conciliación.
+// Si hay un único valor coincidente y el registro sigue pendiente, se marca
+// automáticamente como pagado y queda trazado con la referencia del PDF.
 
 import { supabase } from '@/lib/supabase/client'
 
@@ -41,7 +30,7 @@ export type ResultadoConciliacion = {
 
 export async function extraerTextoPdf(archivo: File): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
 
   const buffer = await archivo.arrayBuffer()
   const documento = await pdfjsLib.getDocument({ data: buffer }).promise
@@ -83,35 +72,23 @@ function normalizar(texto: string): string {
     .trim()
 }
 
-function extraerAliasDeLinea(linea: string, valorObjetivo: number): string {
-  // Remover valores numéricos que representen dinero/número
-  let limpia = linea.replace(/\$?\s?(\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:[.,]\d{2})?\b/g, '')
-  
-  // Remover formatos de fecha (DD/MM/YYYY, YYYY/MM/DD, etc.)
+function extraerAliasDeLinea(linea: string): string {
+  let limpia = linea.replace(/\$?\s?(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:[.,]\d{2})?\b/g, '')
   limpia = limpia.replace(/\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b/g, '')
-  
-  // Remover palabras comunes de transacciones bancarias
+
   const palabrasComunes = [
-    'transf', 'transferencia', 'consignacion', 'abono', 'pago', 'nomina', 'ach', 
-    'banco', 'av villas', 'davivienda', 'bancolombia', 'efectivo', 'egreso', 
+    'transf', 'transferencia', 'consignacion', 'abono', 'pago', 'nomina', 'ach',
+    'banco', 'av villas', 'davivienda', 'bancolombia', 'efectivo', 'egreso',
     'debito', 'credito', 'nro', 'ref', 'cuenta', 'cte', 'ahos', 'ahorro',
     'a', 'de', 'para', 'por', 'en', 'con'
   ]
-  
-  let palabras = limpia.split(/\s+/)
-  palabras = palabras.filter(p => {
-    const pNorm = normalizar(p)
-    if (!pNorm) return false
-    if (palabrasComunes.includes(pNorm)) return false
-    if (/^\d+$/.test(pNorm)) return false
-    return true
-  })
-  
-  const aliasDetectado = palabras.join(' ').trim()
-  return aliasDetectado
-    .replace(/[()\[\]\-,.:;]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+
+  const palabras = limpia
+    .split(/\s+/)
+    .map((palabra) => normalizar(palabra))
+    .filter((palabra) => Boolean(palabra) && !palabrasComunes.includes(palabra) && !/^\d+$/.test(palabra))
+
+  return palabras.join(' ').trim().replace(/[()\[\]-,.:;]/g, ' ').replace(/\s+/g, ' ')
 }
 
 export function conciliarPorValor(
@@ -135,7 +112,7 @@ export function conciliarPorValor(
     }
   }
 
-  const valoresUsados = new Set(matches.map((match) => match.valorConciliado))
+  const valoresUsados = new Set(matches.map((m) => m.valorConciliado))
   const valoresSinMatch = valoresExtracto.filter((valor) => !valoresUsados.has(valor))
 
   return { matches, valoresSinMatch, registrosSinMatch }
@@ -230,7 +207,7 @@ export async function conciliarExtractoPdf(
     await Promise.all(
       resultado.matches.map((match) => {
         const metodo = match.fragmentoExtracto.includes('alias') ? 'automatico_nombre' : 'automatico_valor'
-        let query = supabase
+        return supabase
           .from('nomina_programada')
           .update({
             estado: 'Pagado',
@@ -239,12 +216,7 @@ export async function conciliarExtractoPdf(
             archivo_url: archivo.name,
           })
           .eq('id', match.registroId)
-
-        if (empresaId) {
-          query = query.eq('empresa_id', empresaId)
-        }
-
-        return query
+          .eq('empresa_id', empresaId ?? '')
       })
     )
   }

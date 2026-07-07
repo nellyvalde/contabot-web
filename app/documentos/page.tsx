@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useUser } from '@/lib/hooks/useUser'
 import Sidebar from '@/components/Sidebar'
@@ -41,6 +41,57 @@ type DatosIA = {
   cuenta_puc: string
   alerta: string
   ya_pagado: boolean
+  empleado_sugerido_id?: string
+  nombre_empleado_sugerido?: string
+  cedula_empleado_sugerido?: string
+}
+
+function normalizar(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function obtenerPeriodoDeFecha(fechaStr?: string | null): string {
+  if (!fechaStr) return new Date().toISOString().slice(0, 7)
+  const matches = fechaStr.match(/^(\d{4})[-/.](\d{2})/)
+  if (matches) {
+    return `${matches[1]}-${matches[2]}`
+  }
+  return new Date().toISOString().slice(0, 7)
+}
+
+async function guardarAliasTercero(nombreProveedor: string, cedulaEmpleado: string, userId: string, empresaId: string) {
+  if (!nombreProveedor || !cedulaEmpleado || !userId || !empresaId) return
+  const aliasLimpio = nombreProveedor.trim()
+  if (aliasLimpio.length < 3) return
+
+  try {
+    const { data: aliasExistente } = await supabase
+      .from('alias_terceros')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('empresa_id', empresaId)
+      .eq('cedula', cedulaEmpleado)
+      .eq('alias', aliasLimpio)
+      .maybeSingle()
+
+    if (!aliasExistente) {
+      await supabase.from('alias_terceros').insert({
+        user_id: userId,
+        empresa_id: empresaId,
+        cedula: cedulaEmpleado,
+        alias: aliasLimpio
+      })
+      console.log(`[ContaBot] Guardado alias "${aliasLimpio}" para empleado con cédula ${cedulaEmpleado}`)
+    }
+  } catch (err) {
+    console.error('[ContaBot] Error guardando alias de tercero:', err)
+  }
 }
 
 const ETIQUETAS_TIPO: Record<TipoDocumento, string> = {
@@ -72,6 +123,7 @@ function DocumentosContenido() {
 
   const [escaneando, setEscaneando] = useState(false)
   const [datosIA, setDatosIA] = useState<DatosIA | null>(null)
+  const [archivoOriginal, setArchivoOriginal] = useState<File | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [mensajeExito, setMensajeExito] = useState<string | null>(null)
   const [paginaActual, setPaginaActual] = useState(0)
@@ -84,6 +136,85 @@ function DocumentosContenido() {
   const [fecha, setFecha] = useState('')
   const [valor, setValor] = useState('')
   const [cuentaPuc, setCuentaPuc] = useState('')
+
+  async function enrutarDocumentoIA(datos: DatosIA, empresaId: string): Promise<DatosIA> {
+    try {
+      const periodo = obtenerPeriodoDeFecha(datos.fecha_emision || datos.fecha)
+      const { data: empData } = await supabase
+        .from('nomina_programada')
+        .select('id, nombre_empleado, cedula, neto_pagar')
+        .eq('empresa_id', empresaId)
+        .eq('periodo_contable', periodo)
+        .eq('estado', 'Pendiente de Pago')
+
+      if (!empData || empData.length === 0) return datos
+
+      const { data: aliasData } = await supabase
+        .from('alias_terceros')
+        .select('cedula, alias')
+        .eq('empresa_id', empresaId)
+
+      const aliasesMap: Record<string, string[]> = {}
+      if (aliasData) {
+        for (const row of aliasData) {
+          if (!aliasesMap[row.cedula]) aliasesMap[row.cedula] = []
+          aliasesMap[row.cedula].push(row.alias)
+        }
+      }
+
+      const proveedorNorm = normalizar(datos.proveedor || '')
+      const valorDoc = datos.valor_total || datos.valor || 0
+
+      // 1. Coincidencia por Nombre/Alias + Valor (+/- 10)
+      for (const emp of empData) {
+        const empNombreNorm = normalizar(emp.nombre_empleado)
+        const empAliases = aliasesMap[emp.cedula] || []
+        
+        let coincideNombre = proveedorNorm.includes(empNombreNorm) || empNombreNorm.includes(proveedorNorm)
+        if (!coincideNombre) {
+          for (const alias of empAliases) {
+            const aliasNorm = normalizar(alias)
+            if (aliasNorm && (proveedorNorm.includes(aliasNorm) || aliasNorm.includes(proveedorNorm))) {
+              coincideNombre = true
+              break
+            }
+          }
+        }
+
+        if (coincideNombre && Math.abs(Number(emp.neto_pagar) - Number(valorDoc)) <= 10) {
+          return {
+            ...datos,
+            categoria: 'Nomina',
+            tipo_documento: 'Comprobante de Pago a Terceros',
+            cuenta_puc: '510506',
+            empleado_sugerido_id: emp.id,
+            nombre_empleado_sugerido: emp.nombre_empleado,
+            cedula_empleado_sugerido: emp.cedula,
+            alerta: `💡 Auto-categorizado como Nómina. Coincidencia por nombre/alias con el empleado ${emp.nombre_empleado}.`
+          }
+        }
+      }
+
+      // 2. Coincidencia por Valor Único (+/- 10)
+      const coincidenValor = empData.filter(emp => Math.abs(Number(emp.neto_pagar) - Number(valorDoc)) <= 10)
+      if (coincidenValor.length === 1) {
+        const emp = coincidenValor[0]
+        return {
+          ...datos,
+          categoria: 'Nomina',
+          tipo_documento: 'Comprobante de Pago a Terceros',
+          cuenta_puc: '510506',
+          empleado_sugerido_id: emp.id,
+          nombre_empleado_sugerido: emp.nombre_empleado,
+          cedula_empleado_sugerido: emp.cedula,
+          alerta: `💡 Auto-categorizado como Nómina. Se detectó coincidencia de valor único con el empleado ${emp.nombre_empleado}.`
+        }
+      }
+    } catch (err) {
+      console.error('[ContaBot] Error en enrutarDocumentoIA:', err)
+    }
+    return datos
+  }
 
   useEffect(() => {
     if (empresaActiva?.id) {
@@ -113,6 +244,7 @@ function DocumentosContenido() {
     e.target.value = ''
     setEscaneando(true)
     setDatosIA(null)
+    setArchivoOriginal(file)
     setError(null)
     setMensajeExito(null)
     setPaginaActual(0)
@@ -127,8 +259,12 @@ function DocumentosContenido() {
         formData.append('empresa_nit', empresaActiva.nit)
         const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
         const json = await res.json()
-        if (json.success) setDatosIA(json.datos)
-        else setError('La IA no pudo leer el documento: ' + json.error)
+        if (json.success) {
+          const datosEnrutados = await enrutarDocumentoIA(json.datos, empresaActiva.id)
+          setDatosIA(datosEnrutados)
+        } else {
+          setError('La IA no pudo leer el documento: ' + json.error)
+        }
         setEscaneando(false)
         return
       }
@@ -145,8 +281,12 @@ function DocumentosContenido() {
         formData.append('empresa_nit', empresaActiva.nit)
         const res = await fetch('/api/leer-factura', { method: 'POST', body: formData })
         const json = await res.json()
-        if (json.success) setDatosIA(json.datos)
-        else setError('La IA no pudo leer el documento: ' + json.error)
+        if (json.success) {
+          const datosEnrutados = await enrutarDocumentoIA(json.datos, empresaActiva.id)
+          setDatosIA(datosEnrutados)
+        } else {
+          setError('La IA no pudo leer el documento: ' + json.error)
+        }
         setEscaneando(false)
         return
       }
@@ -200,8 +340,14 @@ function DocumentosContenido() {
         i++
       }
 
-      setResultadosMultiples(registrosFinales)
-      setMensajeExito(`✅ ${numPaginas} páginas procesadas — ${registrosFinales.length} documento(s) encontrado(s)`)
+      const registrosEnrutados = await Promise.all(
+        registrosFinales.map(async (reg) => {
+          return await enrutarDocumentoIA(reg, empresaActiva.id)
+        })
+      )
+
+      setResultadosMultiples(registrosEnrutados)
+      setMensajeExito(`✅ ${numPaginas} páginas procesadas — ${registrosEnrutados.length} documento(s) encontrado(s)`)
     } catch (err: any) {
       setError('Error procesando el archivo: ' + err.message)
     }
@@ -209,7 +355,7 @@ function DocumentosContenido() {
   }
 
   async function guardarTodos() {
-    const total = resultadosMultiples.length
+const total = resultadosMultiples.length
     const copia = [...resultadosMultiples]
     for (let i = 0; i < copia.length; i++) {
       await guardarRegistroMultiple(copia[i], 0)
@@ -233,20 +379,35 @@ function DocumentosContenido() {
         }
       }
 
-      if (reg.categoria === 'Comprobante de Nomina') {
+      if (reg.categoria === 'Comprobante de Nomina' || reg.categoria === 'Nomina') {
         const nombreBeneficiario = (reg.proveedor || '').toUpperCase()
         const valorBuscado = reg.valor_total || reg.valor || 0
-        let empleadoMatch = null
-        if (nombreBeneficiario) {
-          const { data: empData } = await supabase.from('nomina_programada').select('*').eq('empresa_id', empresaActiva.id).ilike('nombre_empleado', `%${nombreBeneficiario.split(' ')[0]}%`).maybeSingle()
-          empleadoMatch = empData
+        let empleadoId = reg.empleado_sugerido_id
+        let empleadoCedula = reg.cedula_empleado_sugerido
+        let empleadoNombre = reg.nombre_empleado_sugerido
+
+        if (!empleadoId) {
+          let empleadoMatch = null
+          if (nombreBeneficiario) {
+            const { data: empData } = await supabase.from('nomina_programada').select('*').eq('empresa_id', empresaActiva.id).ilike('nombre_empleado', `%${nombreBeneficiario.split(' ')[0]}%`).maybeSingle()
+            empleadoMatch = empData
+          }
+          if (!empleadoMatch && valorBuscado > 0) {
+            const { data: empValor } = await supabase.from('nomina_programada').select('*').eq('empresa_id', empresaActiva.id).eq('neto_pagar', valorBuscado).maybeSingle()
+            empleadoMatch = empValor
+          }
+          if (empleadoMatch) {
+            empleadoId = empleadoMatch.id
+            empleadoCedula = empleadoMatch.cedula
+            empleadoNombre = empleadoMatch.nombre_empleado
+          }
         }
-        if (!empleadoMatch && valorBuscado > 0) {
-          const { data: empValor } = await supabase.from('nomina_programada').select('*').eq('empresa_id', empresaActiva.id).eq('neto_pagar', valorBuscado).maybeSingle()
-          empleadoMatch = empValor
-        }
-        if (empleadoMatch) {
-          await supabase.from('nomina_programada').update({ estado: 'Pagado', archivo_url: archivoUrl || 'subido' }).eq('id', empleadoMatch.id)
+
+        if (empleadoId) {
+          await supabase.from('nomina_programada').update({ estado: 'Pagado', archivo_url: archivoUrl || 'subido' }).eq('id', empleadoId)
+          if (reg.proveedor && empleadoCedula) {
+            await guardarAliasTercero(reg.proveedor, empleadoCedula, user.id, empresaActiva.id)
+          }
         } else {
           const { error: e } = await supabase.from('documentos').insert({
             empresa_id: empresaActiva.id, tipo: 'soporte_nomina',
@@ -263,9 +424,9 @@ function DocumentosContenido() {
           numero_documento: reg.numero_documento || null, proveedor_cliente: reg.proveedor || null,
           descripcion: reg.descripcion || null, fecha_emision: reg.fecha_emision || reg.fecha || null,
           valor: reg.valor_total || reg.valor || 0, iva: reg.iva || 0, cuenta_puc: reg.cuenta_puc || null,
-        estado_conciliacion: reg.categoria === 'Nomina' ? 'pendiente' : 'conciliado',
-estado: reg.categoria === 'Nomina' ? 'Pendiente' : 'Pagado',
-archivo_url: archivoUrl,
+          estado_conciliacion: reg.categoria === 'Nomina' ? 'pendiente' : 'conciliado',
+          estado: reg.categoria === 'Nomina' ? 'Pendiente' : 'Pagado',
+          archivo_url: archivoUrl,
         })
         if (e) {
           if (e.code === '23505') setError('⚠️ Este documento ya se encuentra registrado en el sistema y no puede ser duplicado.')
@@ -288,36 +449,196 @@ archivo_url: archivoUrl,
   }
 
   async function guardarDesdeIA() {
-    if (!datosIA || !empresaActiva?.id) return
+    if (!datosIA || !empresaActiva?.id || !user) return
     setGuardando(true)
     setError(null)
-    if (datosIA.numero_documento) {
-      const { data: existente } = await supabase.from('documentos').select('id').eq('empresa_id', empresaActiva.id).eq('numero_documento', datosIA.numero_documento).maybeSingle()
-      if (existente) {
-        setError('⚠️ Este documento ya fue registrado. Número: ' + datosIA.numero_documento)
-        setGuardando(false)
-        return
+    setMensajeExito(null)
+
+    try {
+      let archivoUrl = null
+      if (archivoOriginal) {
+        const nombreArchivo = `${empresaActiva.id}/${Date.now()}_${archivoOriginal.name}`
+        const { error: storageError } = await supabase.storage
+          .from('facturas')
+          .upload(nombreArchivo, archivoOriginal)
+        if (!storageError) {
+          const { data: urlData } = supabase.storage.from('facturas').getPublicUrl(nombreArchivo)
+          archivoUrl = urlData.publicUrl
+        }
       }
-    }
-    const estadoConciliacion: EstadoConciliacion = datosIA.ya_pagado ? 'conciliado' : 'pendiente'
-    const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
-    const tipoDoc: TipoDocumento = datosIA.categoria === 'Factura de Venta' ? 'factura_venta' : datosIA.categoria === 'Nomina' ? 'soporte_nomina' : 'factura_compra'
-    const { error: e } = await supabase.from('documentos').insert({
-      empresa_id: empresaActiva.id, tipo: tipoDoc,
-      numero_documento: datosIA.numero_documento || null, proveedor_cliente: datosIA.proveedor || null,
-      descripcion: datosIA.descripcion || null, fecha_emision: datosIA.fecha_emision || datosIA.fecha || null,
-      valor: datosIA.valor_total || datosIA.valor || 0, iva: datosIA.iva || 0, cuenta_puc: datosIA.cuenta_puc || null,
-      estado_conciliacion: estadoConciliacion, estado: estadoTexto,
-    })
-    if (e) {
-      if (e.code === '23505') setError('⚠️ Este documento ya se encuentra registrado en el sistema y no puede ser duplicado.')
-      else setError(`Error guardando: ${e.message}`)
-    } else {
-      setMensajeExito('✅ Documento guardado correctamente')
-      setDatosIA(null)
-      await cargarDocumentos()
+
+      if (datosIA.categoria === 'Nomina' || datosIA.categoria === 'Comprobante de Nomina') {
+        let empleadoId = datosIA.empleado_sugerido_id
+        let empleadoCedula = datosIA.cedula_empleado_sugerido
+        let empleadoNombre = datosIA.nombre_empleado_sugerido
+
+        if (!empleadoId) {
+          const nombreBeneficiario = (datosIA.proveedor || '').toUpperCase()
+          const valorBuscado = datosIA.valor_total || datosIA.valor || 0
+          let empleadoMatch = null
+          if (nombreBeneficiario) {
+            const { data: empData } = await supabase
+              .from('nomina_programada')
+              .select('*')
+              .eq('empresa_id', empresaActiva.id)
+              .ilike('nombre_empleado', `%${nombreBeneficiario.split(' ')[0]}%`)
+              .maybeSingle()
+            empleadoMatch = empData
+          }
+          if (!empleadoMatch && valorBuscado > 0) {
+            const { data: empValor } = await supabase
+              .from('nomina_programada')
+              .select('*')
+              .eq('empresa_id', empresaActiva.id)
+              .eq('neto_pagar', valorBuscado)
+              .maybeSingle()
+            empleadoMatch = empValor
+          }
+          if (empleadoMatch) {
+            empleadoId = empleadoMatch.id
+            empleadoCedula = empleadoMatch.cedula
+            empleadoNombre = empleadoMatch.nombre_empleado
+          }
+        }
+
+        if (empleadoId) {
+          const { error: errPayroll } = await supabase
+            .from('nomina_programada')
+            .update({
+              estado: 'Pagado',
+              metodo_conciliacion: 'automatico_valor',
+              referencia_conciliacion: `Conciliado desde Buzón IA (Soporte)`,
+              archivo_url: archivoUrl || 'subido'
+            })
+            .eq('id', empleadoId)
+
+          if (errPayroll) {
+            setError(`Error marcando nómina como pagada: ${errPayroll.message}`)
+            setGuardando(false)
+            return
+          }
+
+          if (datosIA.proveedor && empleadoCedula) {
+            await guardarAliasTercero(datosIA.proveedor, empleadoCedula, user.id, empresaActiva.id)
+          }
+
+          setMensajeExito(`✅ Nómina de ${empleadoNombre} marcada como pagada y soporte vinculado.`)
+          setDatosIA(null)
+          setArchivoOriginal(null)
+          await cargarDocumentos()
+          setGuardando(false)
+          return
+        }
+      }
+
+      if (datosIA.numero_documento) {
+        const { data: existente } = await supabase.from('documentos').select('id').eq('empresa_id', empresaActiva.id).eq('numero_documento', datosIA.numero_documento).maybeSingle()
+        if (existente) {
+          setError('⚠️ Este documento ya fue registrado. Número: ' + datosIA.numero_documento)
+          setGuardando(false)
+          return
+        }
+      }
+      const estadoConciliacion: EstadoConciliacion = datosIA.ya_pagado ? 'conciliado' : 'pendiente'
+      const estadoTexto = datosIA.ya_pagado ? 'Pagado' : 'Pendiente'
+      const tipoDoc: TipoDocumento = datosIA.categoria === 'Factura de Venta' ? 'factura_venta' : datosIA.categoria === 'Nomina' ? 'soporte_nomina' : 'factura_compra'
+      const { error: e } = await supabase.from('documentos').insert({
+        empresa_id: empresaActiva.id, tipo: tipoDoc,
+        numero_documento: datosIA.numero_documento || null, proveedor_cliente: datosIA.proveedor || null,
+        descripcion: datosIA.descripcion || null, fecha_emision: datosIA.fecha_emision || datosIA.fecha || null,
+        valor: datosIA.valor_total || datosIA.valor || 0, iva: datosIA.iva || 0, cuenta_puc: datosIA.cuenta_puc || null,
+        estado_conciliacion: estadoConciliacion, estado: estadoTexto, archivo_url: archivoUrl,
+      })
+      if (e) {
+        if (e.code === '23505') setError('⚠️ Este documento ya se encuentra registrado en el sistema y no puede ser duplicado.')
+        else setError(`Error guardando: ${e.message}`)
+      } else {
+        setMensajeExito('✅ Documento guardado correctamente')
+        setDatosIA(null)
+        setArchivoOriginal(null)
+        await cargarDocumentos()
+      }
+    } catch (err: any) {
+      setError(`Error: ${err.message}`)
     }
     setGuardando(false)
+  }
+
+  async function trasladarANomina(docId: string) {
+    setError(null)
+    setMensajeExito(null)
+    try {
+      const { data: doc, error: errDoc } = await supabase
+        .from('documentos')
+        .select('*')
+        .eq('id', docId)
+        .single()
+      if (errDoc || !doc) {
+        setError('No se pudo encontrar el documento original.')
+        return
+      }
+
+      const periodo = obtenerPeriodoDeFecha(doc.fecha_emision)
+      const { data: empMatches, error: errEmp } = await supabase
+        .from('nomina_programada')
+        .select('*')
+        .eq('empresa_id', empresaActiva!.id)
+        .eq('periodo_contable', periodo)
+        .eq('estado', 'Pendiente de Pago')
+
+      if (errEmp || !empMatches) {
+        setError('Error consultando empleados pendientes: ' + (errEmp?.message || ''))
+        return
+      }
+
+      const coincidenMonto = empMatches.filter(e => Math.abs(Number(e.neto_pagar) - Number(doc.valor)) <= 10)
+
+      if (coincidenMonto.length === 0) {
+        setError(`No se encontró ningún empleado pendiente en el periodo ${periodo} con neto a pagar de $${Number(doc.valor).toLocaleString()} (+/- $10)`)
+        return
+      }
+
+      if (coincidenMonto.length > 1) {
+        setError(`Hay múltiples empleados (${coincidenMonto.map(e => e.nombre_empleado).join(', ')}) con el mismo neto de $${Number(doc.valor).toLocaleString()}. Por favor concílialo manualmente en Nómina.`)
+        return
+      }
+
+      const empleado = coincidenMonto[0]
+
+      const { error: errUpdate } = await supabase
+        .from('nomina_programada')
+        .update({
+          estado: 'Pagado',
+          metodo_conciliacion: 'automatico_valor',
+          referencia_conciliacion: `Conciliado tras traslado de documento "${doc.proveedor_cliente || 'Desconocido'}"`,
+          archivo_url: doc.archivo_url
+        })
+        .eq('id', empleado.id)
+
+      if (errUpdate) {
+        setError('Error al actualizar la nómina: ' + errUpdate.message)
+        return
+      }
+
+      if (doc.proveedor_cliente && empleado.cedula && user) {
+        await guardarAliasTercero(doc.proveedor_cliente, empleado.cedula, user.id, empresaActiva!.id)
+      }
+
+      const { error: errDel } = await supabase
+        .from('documentos')
+        .delete()
+        .eq('id', docId)
+
+      if (errDel) {
+        setError('Nómina marcada como pagada, pero falló eliminar el documento duplicado: ' + errDel.message)
+        return
+      }
+
+      setMensajeExito(`✅ Registro trasladado con éxito. Nómina de ${empleado.nombre_empleado} marcada como Pagada y soporte vinculado.`)
+      await cargarDocumentos()
+    } catch (err: any) {
+      setError('Error inesperado trasladando: ' + err.message)
+    }
   }
 
   async function registrarDocumento() {
