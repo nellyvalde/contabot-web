@@ -83,7 +83,7 @@ function normalizar(texto: string): string {
     .trim()
 }
 
-function extraerAliasDeLinea(linea: string, valorObjetivo: number): string {
+function extraerAliasDeLinea(linea: string): string {
   // Remover valores numéricos que representen dinero/número
   let limpia = linea.replace(/\$?\s?(\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:[.,]\d{2})?\b/g, '')
   
@@ -202,7 +202,7 @@ export async function conciliarExtractoPdf(
       for (const linea of lineas) {
         const valoresLinea = extraerValoresMonetarios(linea)
         if (valoresLinea.some((valor) => Math.abs(valor - valorSeleccionado) <= 10)) {
-          aliasExtraido = extraerAliasDeLinea(linea, valorSeleccionado)
+          aliasExtraido = extraerAliasDeLinea(linea)
           if (aliasExtraido) break
         }
       }
