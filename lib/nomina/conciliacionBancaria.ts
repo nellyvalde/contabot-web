@@ -202,7 +202,7 @@ export async function conciliarExtractoPdf(
       for (const linea of lineas) {
         const valoresLinea = extraerValoresMonetarios(linea)
         if (valoresLinea.some((valor) => Math.abs(valor - valorSeleccionado) <= 10)) {
-          aliasExtraido = extraerAliasDeLinea(linea)
+          aliasExtraido = extraerAliasDeLinea(linea, valorSeleccionado)
           if (aliasExtraido) break
         }
       }

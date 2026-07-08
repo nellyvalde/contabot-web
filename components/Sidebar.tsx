@@ -26,31 +26,23 @@ const menuGroups: MenuGroup[] = [
     items: [
       { id: 'dashboard',  icon: <LayoutDashboard size={16}/>, label: 'Dashboard',    href: '/dashboard' },
       { id: 'documentos', icon: <Inbox size={16}/>,           label: 'Buzón IA',     href: '/documentos' },
+      { id: 'revision',  icon: <Bot size={16}/>,              label: 'Revisión IA',  href: '/documentos?vista=revision' },
     ]
   },
   {
     titulo: 'REGISTROS',
     items: [
-     { id: 'ventas',    icon: <Receipt size={16}/>,      label: 'Ventas',          href: '/ventas' },
-{ id: 'compras',   icon: <ShoppingCart size={16}/>, label: 'Compras y Gastos',href: '/compras' },
+      { id: 'ventas',    icon: <Receipt size={16}/>,      label: 'Ventas',          href: '/ventas' },
+      { id: 'compras',   icon: <ShoppingCart size={16}/>, label: 'Compras y Gastos',href: '/compras' },
       { id: 'nomina',      icon: <Users size={16}/>,        label: 'Nómina',          href: '/nomina' },
     ]
   },
   {
-  titulo: 'REPORTES',
-  items: [
-    { id: 'reportes',      icon: <BarChart2 size={16}/>,    label: 'Reportes Contables', href: '/reportes' },
-    { id: 'revision',      icon: <Bot size={16}/>,          label: 'Revisión IA',        href: '/documentos?vista=revision' },
-    { id: 'alertas',       icon: <AlertTriangle size={16}/>,label: 'Centro de Alertas',  href: '/alertas' },
-    { id: 'configuracion', icon: <Settings size={16}/>,     label: 'Configuración',      href: '/configuracion' },
-  ]
-},
-  {
-    titulo: 'REPORTES',
+    titulo: 'MONITOREO',
     items: [
-      { id: 'reportes', icon: <BarChart2 size={16}/>, label: 'Reportes Contables', href: '/reportes' },
-      { id: 'revision', icon: <Bot size={16}/>,       label: 'Revisión IA',        href: '/documentos?vista=revision' },
-      { id: 'alertas',  icon: <AlertTriangle size={16}/>, label: 'Centro de Alertas', href: '/alertas' },
+      { id: 'alertas',       icon: <AlertTriangle size={16}/>,label: 'Centro de Alertas',  href: '/alertas' },
+      { id: 'reportes',      icon: <BarChart2 size={16}/>,    label: 'Reportes Contables', href: '/reportes' },
+      { id: 'configuracion', icon: <Settings size={16}/>,     label: 'Configuración',      href: '/configuracion' },
     ]
   },
 ]

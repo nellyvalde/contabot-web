@@ -109,8 +109,9 @@ const [cargandoBot, setCargandoBot] = useState(false)
     if (data) setClientesDB(data)
   }
 
-const preguntarBot = async () => {
-  if (!preguntaBot.trim()) return
+const preguntarBot = async (pregunta?: string) => {
+  const textoPregunta = pregunta?.trim() || preguntaBot.trim()
+  if (!textoPregunta || !empresaActiva) return
   setCargandoBot(true)
   try {
     const res = await fetch('/api/leer-factura', {
@@ -118,9 +119,10 @@ const preguntarBot = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tipo: 'consulta',
-        pregunta: preguntaBot,
+        pregunta: textoPregunta,
         contexto: {
-          empresa: empresaActiva?.razon_social,
+          empresa: empresaActiva.razon_social,
+          nit: empresaActiva.nit,
           totalIngresos,
           totalGastos,
           utilidad,
@@ -131,12 +133,13 @@ const preguntarBot = async () => {
       })
     })
     const json = await res.json()
-    setRespuestaBot(json.respuesta || 'No pude procesar tu consulta.')
-  } catch {
+    setRespuestaBot(json.success ? json.respuesta : `Error: ${json.error || 'No pude procesar tu consulta.'}`)
+  } catch (error) {
     setRespuestaBot('Error de conexión.')
+    console.error(error)
   }
   setCargandoBot(false)
-  setPreguntaBot('')
+  if (!pregunta) setPreguntaBot('')
 }
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -440,7 +443,7 @@ const porcentajeGasto = totalIngresos > 0 ? Math.round((totalGastos / totalIngre
             className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
           />
           <button
-            onClick={preguntarBot}
+            onClick={() => preguntarBot()}
             disabled={cargandoBot}
             className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
           >
@@ -450,7 +453,7 @@ const porcentajeGasto = totalIngresos > 0 ? Math.round((totalGastos / totalIngre
 
         <div className="flex gap-2 mt-3 flex-wrap">
           {['¿Cuál es mi utilidad?', '¿Qué debo pagar?', '¿Cómo mejorar mi flujo?'].map(q => (
-            <button key={q} onClick={() => { setPreguntaBot(q); preguntarBot() }}
+            <button key={q} onClick={() => preguntarBot(q)}
               className="text-xs bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200">
               {q}
             </button>
