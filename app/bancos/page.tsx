@@ -54,13 +54,13 @@ export default function BancosPage() {
     })
   }, [])
 
-  // Cargar conciliación previa cuando empresa esté lista
+  // Cargar conciliaciones bancarias guardadas cuando se monta el componente o cambia la empresa activa
   useEffect(() => {
     if (!empresaActiva?.id) return
-    cargarPrevio()
+    cargarConciliacionesGuardadas()
   }, [empresaActiva?.id])
 
-  const cargarPrevio = async () => {
+  const cargarConciliacionesGuardadas = async () => {
     if (!empresaActiva?.id) return
 
     const { data: previa } = await supabase
