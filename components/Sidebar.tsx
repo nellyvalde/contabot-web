@@ -34,6 +34,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { id: 'ventas',    icon: <Receipt size={16}/>,      label: 'Ventas',          href: '/ventas' },
       { id: 'compras',   icon: <ShoppingCart size={16}/>, label: 'Compras y Gastos',href: '/compras' },
+      { id: 'bancos',    icon: <Wallet size={16}/>,        label: 'Bancos',          href: '/bancos' },
       { id: 'nomina',      icon: <Users size={16}/>,        label: 'Nómina',          href: '/nomina' },
     ]
   },

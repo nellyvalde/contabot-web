@@ -227,8 +227,11 @@ export default function BancosPage() {
     await supabase.from('conciliaciones_bancarias').delete()
       .eq('empresa_id', empresaActiva.id).eq('estado', 'no_encontrado')
 
+    const currentUser = user ?? (await supabase.auth.getUser()).data.user
+
     await supabase.from('conciliaciones_bancarias').insert(
       resultadosCruce.map(r => ({
+        user_id: currentUser?.id || null,
         empresa_id: empresaActiva.id,        // ← fix: era user_id
         banco: bancoSeleccionado,
         movimiento_fecha: r.movimiento.fecha,
