@@ -63,10 +63,60 @@ export default function SelectorEmpresa() {
   )
 
   if (!empresaActiva) return (
-    <div className="mx-3 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">
-      <p className="text-xs text-amber-400 font-medium">⚠ Sin empresa seleccionada</p>
-      <button onClick={() => setModalAbierto(true)} className="text-xs text-amber-300 underline mt-0.5">Agregar empresa</button>
-    </div>
+    <>
+      <div className="mx-3 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3 py-2.5">
+        <p className="text-xs text-amber-400 font-medium">⚠ Sin empresa seleccionada</p>
+        <button onClick={() => setModalAbierto(true)} className="text-xs text-amber-300 underline mt-0.5">Agregar empresa</button>
+      </div>
+
+      {/* Modal agregar empresa (también visible cuando no hay empresa activa) */}
+      {modalAbierto && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-slate-900">Agregar nueva empresa</h2>
+              <button onClick={() => { setModalAbierto(false); setErrorModal(null) }} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">NIT de la empresa</label>
+                <input
+                  value={nitNuevo}
+                  onChange={e => setNitNuevo(e.target.value)}
+                  placeholder="Ej. 900123456"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">Razón social</label>
+                <input
+                  value={razonNueva}
+                  onChange={e => setRazonNueva(e.target.value)}
+                  placeholder="Ej. MI EMPRESA SAS"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                />
+              </div>
+              {errorModal && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{errorModal}</p>}
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => { setModalAbierto(false); setErrorModal(null) }}
+                  className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={agregarEmpresa}
+                  disabled={guardando}
+                  className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-all"
+                >
+                  {guardando ? 'Guardando...' : '+ Agregar empresa'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 
   return (
