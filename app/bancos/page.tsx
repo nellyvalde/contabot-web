@@ -333,10 +333,10 @@ export default function BancosPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Periodo cargado</label>
                 <select value={periodoSeleccionado} onChange={e => setPeriodoSeleccionado(e.target.value)}
-                  className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm">
-                  <option value="">Selecciona un periodo</option>
+                  className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-900 bg-white">
+                  <option value="" className="text-slate-900">Selecciona un periodo</option>
                   {periodos.map(periodo => (
-                    <option key={periodo} value={periodo}>{formatearPeriodo(periodo)}</option>
+                    <option key={periodo} value={periodo} className="text-slate-900">{formatearPeriodo(periodo)}</option>
                   ))}
                 </select>
               </div>
