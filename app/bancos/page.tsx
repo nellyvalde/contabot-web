@@ -36,6 +36,23 @@ function diferenciaDias(fecha1: string, fecha2: string): number {
   return Math.abs((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+function construirPeriodo(fecha: string): string {
+  if (!fecha) return ''
+  const d = new Date(fecha)
+  if (Number.isNaN(d.getTime())) return ''
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  return `${d.getFullYear()}-${mes}`
+}
+
+function formatearPeriodo(periodo: string): string {
+  const [anio, mes] = periodo.split('-')
+  if (!anio || !mes) return periodo
+  const index = Number(mes) - 1
+  return `${NOMBRES_MESES[index] || mes} ${anio}`
+}
+
 export default function BancosPage() {
   const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
@@ -46,6 +63,8 @@ export default function BancosPage() {
   const [mensaje, setMensaje] = useState('')
   const [paso, setPaso] = useState<'subir' | 'revisar'>('subir')
   const [mostrarSubida, setMostrarSubida] = useState(false)
+  const [periodos, setPeriodos] = useState<string[]>([])
+  const [periodoSeleccionado, setPeriodoSeleccionado] = useState<string>('')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -57,16 +76,52 @@ export default function BancosPage() {
   // Cargar conciliaciones bancarias guardadas cuando se monta el componente o cambia la empresa activa
   useEffect(() => {
     if (!empresaActiva?.id) return
-    cargarConciliacionesGuardadas()
+    cargarPeriodosDisponibles()
   }, [empresaActiva?.id])
 
-  const cargarConciliacionesGuardadas = async () => {
+  useEffect(() => {
+    if (!empresaActiva?.id || !periodoSeleccionado) return
+    cargarConciliacionesGuardadas()
+  }, [empresaActiva?.id, periodoSeleccionado])
+
+  const obtenerPeriodosUnicos = (registros: any[]) => {
+    const periodosSet = new Set<string>()
+    registros.forEach(item => {
+      if (item.periodo) periodosSet.add(item.periodo)
+      else if (item.movimiento_fecha) periodosSet.add(construirPeriodo(item.movimiento_fecha))
+    })
+    return Array.from(periodosSet).filter(Boolean).sort((a, b) => b.localeCompare(a))
+  }
+
+  const cargarPeriodosDisponibles = async () => {
     if (!empresaActiva?.id) return
+
+    const { data: conciliaciones } = await supabase
+      .from('conciliaciones_bancarias')
+      .select('periodo')
+      .eq('empresa_id', empresaActiva.id)
+      .order('periodo', { ascending: false })
+
+    const periodosUnicos = (conciliaciones || [])
+      .map((item: any) => item.periodo)
+      .filter((p: any) => !!p)
+      .filter((value: any, index: number, self: any[]) => self.indexOf(value) === index)
+      .sort((a: string, b: string) => b.localeCompare(a))
+
+    setPeriodos(periodosUnicos)
+    if (periodosUnicos.length > 0) {
+      setPeriodoSeleccionado(periodosUnicos[0])
+    }
+  }
+
+  const cargarConciliacionesGuardadas = async () => {
+    if (!empresaActiva?.id || !periodoSeleccionado) return
 
     const { data: previa } = await supabase
       .from('conciliaciones_bancarias')
       .select('*')
-      .eq('empresa_id', empresaActiva.id)   // ← fix: era user_id
+      .eq('empresa_id', empresaActiva.id)
+      .eq('periodo', periodoSeleccionado)
       .order('fecha_carga', { ascending: false })
 
     if (!previa || previa.length === 0) return
@@ -234,6 +289,7 @@ export default function BancosPage() {
         user_id: currentUser?.id || null,
         empresa_id: empresaActiva.id,        // ← fix: era user_id
         banco: bancoSeleccionado,
+        periodo: construirPeriodo(r.movimiento.fecha),
         movimiento_fecha: r.movimiento.fecha,
         movimiento_descripcion: r.movimiento.descripcion,
         movimiento_valor: r.movimiento.valor,
@@ -266,12 +322,24 @@ export default function BancosPage() {
 
         {(paso === 'subir' || mostrarSubida) && (
           <div className="bg-white rounded-2xl p-8 shadow-sm">
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Banco</label>
-              <select value={bancoSeleccionado} onChange={e => setBancoSeleccionado(e.target.value)}
-                className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm">
-                {Object.entries(BANCOS).map(([key, banco]) => <option key={key} value={key}>{banco.nombre}</option>)}
-              </select>
+            <div className="grid gap-6 md:grid-cols-2 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Banco</label>
+                <select value={bancoSeleccionado} onChange={e => setBancoSeleccionado(e.target.value)}
+                  className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm">
+                  {Object.entries(BANCOS).map(([key, banco]) => <option key={key} value={key}>{banco.nombre}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Periodo cargado</label>
+                <select value={periodoSeleccionado} onChange={e => setPeriodoSeleccionado(e.target.value)}
+                  className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm">
+                  <option value="">Selecciona un periodo</option>
+                  {periodos.map(periodo => (
+                    <option key={periodo} value={periodo}>{formatearPeriodo(periodo)}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="border-2 border-dashed border-slate-200 rounded-xl p-12 text-center">
               <p className="text-4xl mb-4">🏦</p>
