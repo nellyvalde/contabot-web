@@ -382,7 +382,7 @@ export default function BancosPage() {
                     <tr key={idx} className={`border-t ${r.estadoCruce === 'confirmado' ? 'bg-emerald-50' : r.estadoCruce === 'encontrado' ? 'bg-yellow-50' : ''}`}>
                       <td className="px-4 py-3 text-slate-600">{r.movimiento.fecha}</td>
                       <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{r.movimiento.descripcion}</td>
-                      <td className="px-4 py-3 font-medium">${Math.round(r.movimiento.valor).toLocaleString()}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">${Math.round(r.movimiento.valor).toLocaleString()}</td>
                       <td className="px-4 py-3">
                         {r.documentoEncontrado && <div><p className="font-medium">{r.documentoEncontrado.proveedor}</p><p className="text-xs text-slate-500">${Math.round(r.documentoEncontrado.valor||0).toLocaleString()} · {r.documentoEncontrado.fecha}</p></div>}
                         {r.nominaEncontrada && <div><p className="font-medium">{r.nominaEncontrada.nombre_empleado}</p><p className="text-xs text-slate-500">Nomina · ${Math.round(r.nominaEncontrada.neto_pagar||0).toLocaleString()}</p></div>}
