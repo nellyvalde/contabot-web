@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
@@ -68,6 +68,7 @@ export default function BancosPage() {
   const [periodos, setPeriodos] = useState<string[]>([])
   const [periodoSeleccionado, setPeriodoSeleccionado] = useState<string>('')
   const [periodoCerrado, setPeriodoCerrado] = useState(false)
+  const periodoConsultaRef = useRef<string>('')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -84,7 +85,7 @@ export default function BancosPage() {
 
   useEffect(() => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
-    cargarConciliacionesGuardadas()
+    cargarConciliacionesGuardadas(periodoSeleccionado)
   }, [empresaActiva?.id, periodoSeleccionado])
 
   const obtenerPeriodosUnicos = (registros: any[]) => {
@@ -123,28 +124,34 @@ export default function BancosPage() {
     setPeriodoCerrado(!!periodosData?.find((item: any) => item.periodo === periodoInicial)?.cerrado)
   }
 
-  const cargarConciliacionesGuardadas = async () => {
-    if (!empresaActiva?.id || !periodoSeleccionado) return
+  const cargarConciliacionesGuardadas = async (periodo: string) => {
+    if (!empresaActiva?.id || !periodo) return
+
+    // Marca cuál es la consulta "vigente": si el usuario cambia de periodo antes de que
+    // esta respuesta llegue, la comparación de abajo la descarta en vez de pisar el estado.
+    periodoConsultaRef.current = periodo
 
     const [{ data: previa }, { data: periodoRecord }] = await Promise.all([
       supabase
         .from('conciliaciones_bancarias')
         .select('*')
         .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodoSeleccionado)
+        .eq('periodo', periodo)
         .order('fecha_carga', { ascending: false }),
       supabase
         .from('periodos_conciliacion_bancaria')
         .select('cerrado')
         .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodoSeleccionado)
+        .eq('periodo', periodo)
         .single(),
     ])
+
+    if (periodoConsultaRef.current !== periodo) return
 
     setPeriodoCerrado(!!periodoRecord?.cerrado)
     if (!previa || previa.length === 0) {
       setResultados([])
-      setMensaje(`No hay conciliaciones guardadas para ${formatearPeriodo(periodoSeleccionado)}.`)
+      setMensaje(`No hay conciliaciones guardadas para ${formatearPeriodo(periodo)}.`)
       return
     }
 
@@ -158,6 +165,8 @@ export default function BancosPage() {
       .from('nomina_programada')
       .select('*')
       .eq('empresa_id', empresaActiva.id)
+
+    if (periodoConsultaRef.current !== periodo) return
 
     const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
       movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
