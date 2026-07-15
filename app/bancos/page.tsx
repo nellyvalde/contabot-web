@@ -42,10 +42,13 @@ const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'J
 
 function construirPeriodo(fecha: string): string {
   if (!fecha) return ''
-  const d = new Date(fecha)
-  if (Number.isNaN(d.getTime())) return ''
-  const mes = String(d.getMonth() + 1).padStart(2, '0')
-  return `${d.getFullYear()}-${mes}`
+  // No usar Date aquí: parsear 'YYYY-MM-DD' como UTC y leer con getters locales
+  // desplaza la fecha un día en timezones negativos (ej. Colombia UTC-5),
+  // lo que le resta un mes al periodo de cualquier movimiento fechado el día 1.
+  const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(fecha.trim())
+  if (!match) return ''
+  const [, anio, mes] = match
+  return `${anio}-${mes}`
 }
 
 function formatearPeriodo(periodo: string): string {
