@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
@@ -38,7 +39,7 @@ function diferenciaDias(fecha1: string, fecha2: string): number {
   return Math.abs((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+export const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 function construirPeriodo(fecha: string): string {
   if (!fecha) return ''
@@ -51,7 +52,7 @@ function construirPeriodo(fecha: string): string {
   return `${anio}-${mes}`
 }
 
-function formatearPeriodo(periodo: string): string {
+export function formatearPeriodo(periodo: string): string {
   const [anio, mes] = periodo.split('-')
   if (!anio || !mes) return periodo
   const index = Number(mes) - 1
@@ -503,7 +504,12 @@ export default function BancosPage() {
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar user={user} onLogout={handleLogout} />
       <main className="flex-1 ml-64 p-8">
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Conciliacion Bancaria</h2>
+        <div className="flex items-start justify-between gap-4 mb-2">
+          <h2 className="text-2xl font-bold text-slate-800">Conciliacion Bancaria</h2>
+          <Link href="/bancos/reporte-contable" className="text-sm text-emerald-600 hover:text-emerald-700 underline whitespace-nowrap mt-1">
+            Ver reporte de conciliación contable →
+          </Link>
+        </div>
         <p className="text-slate-500 text-sm mb-6">Cruza tu extracto bancario con los documentos y nomina registrados en ContaBot</p>
 
         {(paso === 'subir' || mostrarSubida) && (
