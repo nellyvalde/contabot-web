@@ -20,14 +20,20 @@ export async function POST(request: NextRequest) {
     // Buscar empresa
     const { data: empresa } = await supabase
       .from('contabot_empresas')
-      .select('user_id')
+      .select('id')
       .eq('correo', 'asistenciasodeportc@gmail.com')
       .single()
 
-    if (!empresa?.user_id) {
+    if (!empresa?.id) {
       return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
     }
-    const userId = empresa.user_id
+
+    const { data: usuarioEmpresa } = await supabase.from('usuarios_empresas').select('user_id').eq('empresa_id', empresa.id).limit(1).single()
+
+    if (!usuarioEmpresa?.user_id) {
+      return NextResponse.json({ error: 'Empresa no encontrada' }, { status: 404 })
+    }
+    const userId = usuarioEmpresa.user_id
 
     // Si no hay archivo adjunto, guardar en docs_por_clasificar
     if (!archivo) {
