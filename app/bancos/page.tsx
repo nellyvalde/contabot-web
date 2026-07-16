@@ -58,6 +58,47 @@ function formatearPeriodo(periodo: string): string {
   return `${NOMBRES_MESES[index] || mes} ${anio}`
 }
 
+export type MovimientoConciliadoContable = ResultadoCruce & { periodoBancario: string }
+
+// Consulta independiente para el futuro "Reporte de Conciliación Contable".
+// A diferencia de cargarConciliacionesGuardadas (que filtra por `periodo`, el mes
+// real del extracto bancario), esta filtra por `periodo_contable` (el mes en que
+// el gasto se causa según NIIF). No modifica ningún estado del componente ni
+// afecta la vista actual de /bancos.
+export async function obtenerMovimientosPorPeriodoContable(
+  empresaId: string,
+  periodoContable: string
+): Promise<MovimientoConciliadoContable[]> {
+  if (!empresaId || !periodoContable) return []
+
+  const [{ data: previa }, { data: facturas }, { data: nomina }] = await Promise.all([
+    supabase
+      .from('conciliaciones_bancarias')
+      .select('*')
+      .eq('empresa_id', empresaId)
+      .eq('periodo_contable', periodoContable)
+      .order('movimiento_fecha', { ascending: true }),
+    supabase
+      .from('facturas')
+      .select('*')
+      .eq('empresa_id', empresaId),
+    supabase
+      .from('nomina_programada')
+      .select('*')
+      .eq('empresa_id', empresaId),
+  ])
+
+  return (previa || []).map((r: any) => ({
+    movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
+    documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
+    nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
+    estadoCruce: r.estado,
+    periodoDestino: r.periodo_contable,
+    fechaRealOrigen: r.fecha_real_origen || null,
+    periodoBancario: r.periodo,
+  }))
+}
+
 export default function BancosPage() {
   const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
