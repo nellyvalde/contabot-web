@@ -50,7 +50,12 @@ function parseNumber(valor: unknown): number {
 
 function obtenerValorFila(fila: Record<string, unknown>, aliases: string[]): string {
   for (const alias of aliases) {
-    const clave = Object.keys(fila).find((key) => normalizarCabecera(key) === normalizarCabecera(alias))
+    const aliasNormalizado = normalizarCabecera(alias)
+    const clave = Object.keys(fila).find((key) => {
+      const claveNormalizada = normalizarCabecera(key)
+      if (!claveNormalizada) return false
+      return claveNormalizada.includes(aliasNormalizado) || aliasNormalizado.includes(claveNormalizada)
+    })
     if (clave !== undefined) return normalizarTexto(fila[clave])
   }
   return ''
@@ -58,6 +63,44 @@ function obtenerValorFila(fila: Record<string, unknown>, aliases: string[]): str
 
 function leerNumeroFila(fila: Record<string, unknown>, aliases: string[]): number {
   return parseNumber(obtenerValorFila(fila, aliases))
+}
+
+const KEYWORDS_ENCABEZADO = [
+  'nombre', 'empleado', 'nombreempleado', 'nombrecompleto', 'nombres',
+  'cedula', 'cc', 'documento', 'identificacion', 'identificacionempleado',
+  'area', 'departamento', 'cargo',
+  'salario', 'salariobase', 'sueldo', 'basico', 'salariobasemensual',
+  'auxiliotransporte', 'transporte',
+  'bonificaciones', 'bono',
+  'prima',
+  'cesantias',
+  'neto', 'netopagado', 'netoapagar', 'valorpagar', 'pagar',
+  'excesoley1393', 'exceso', 'riesgo',
+].map((palabra) => normalizarCabecera(palabra))
+
+function detectarFilaEncabezado(filas: unknown[][]): number {
+  const limite = Math.min(15, filas.length)
+  let mejorIndice = 0
+  let mejorPuntaje = -1
+
+  for (let i = 0; i < limite; i++) {
+    const fila = filas[i] ?? []
+    let puntaje = 0
+    for (const celda of fila) {
+      const normalizada = normalizarCabecera(celda)
+      if (!normalizada) continue
+      const coincide = KEYWORDS_ENCABEZADO.some(
+        (palabra) => normalizada.includes(palabra) || palabra.includes(normalizada)
+      )
+      if (coincide) puntaje += 1
+    }
+    if (puntaje > mejorPuntaje) {
+      mejorPuntaje = puntaje
+      mejorIndice = i
+    }
+  }
+
+  return mejorIndice
 }
 
 function construirFilaDesdeRegistro(fila: Record<string, unknown>): FilaNominaImportada {
@@ -91,7 +134,16 @@ export async function parseExcelNomina(archivo: File): Promise<FilaNominaImporta
   const buffer = await archivo.arrayBuffer()
   const libro = XLSX.read(buffer, { type: 'array' })
   const hoja = libro.Sheets[libro.SheetNames[0]]
-  const filas = XLSX.utils.sheet_to_json(hoja, { defval: '' }) as Record<string, unknown>[]
+  const filasCrudas = XLSX.utils.sheet_to_json(hoja, { header: 1, defval: '' }) as unknown[][]
+  const indiceEncabezado = detectarFilaEncabezado(filasCrudas)
+  const encabezados = (filasCrudas[indiceEncabezado] ?? []).map((valor) => normalizarTexto(valor))
+  const filas = filasCrudas.slice(indiceEncabezado + 1).map((filaCruda) => {
+    const registro: Record<string, unknown> = {}
+    encabezados.forEach((encabezado, indice) => {
+      if (encabezado) registro[encabezado] = filaCruda[indice] ?? ''
+    })
+    return registro
+  })
 
   return filas.map((fila) => construirFilaDesdeRegistro(fila)).filter((fila) => Boolean(fila.nombreEmpleado && fila.cedula))
 }
