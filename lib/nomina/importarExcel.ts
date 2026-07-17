@@ -69,7 +69,7 @@ function construirFilaDesdeRegistro(fila: Record<string, unknown>): FilaNominaIm
   const bonificaciones = leerNumeroFila(fila, ['bonificaciones', 'bono'])
   const prima = leerNumeroFila(fila, ['prima'])
   const cesantias = leerNumeroFila(fila, ['cesantias'])
-  const netoPagar = leerNumeroFila(fila, ['neto', 'netopagar', 'valorpagar', 'pagar']) || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias
+  const netoPagar = leerNumeroFila(fila, ['netopagado', 'neto_pagado', 'netoapagar', 'valorpagar', 'pagar']) || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias
   const excesoLey1393 = leerNumeroFila(fila, ['excesoley1393', 'exceso', 'riesgo'])
 
   return {
