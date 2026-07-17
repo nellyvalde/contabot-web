@@ -54,7 +54,10 @@ function obtenerValorFila(fila: Record<string, unknown>, aliases: string[]): str
     const clave = Object.keys(fila).find((key) => {
       const claveNormalizada = normalizarCabecera(key)
       if (!claveNormalizada) return false
-      return claveNormalizada.includes(aliasNormalizado) || aliasNormalizado.includes(claveNormalizada)
+      if (claveNormalizada.length < 4 || aliasNormalizado.length < 4) {
+        return claveNormalizada === aliasNormalizado
+      }
+      return claveNormalizada.includes(aliasNormalizado)
     })
     if (clave !== undefined) return normalizarTexto(fila[clave])
   }

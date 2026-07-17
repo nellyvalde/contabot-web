@@ -52,7 +52,7 @@ export function useNomina(periodoContable: string) {
       .select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion')
       .eq('empresa_id', empresaActiva.id)
       .eq('periodo_contable', periodoContable)
-      .order('nombre_empleado')
+      .order('id')
 
     if (e) {
       setError(`Error: ${e.message}`)
