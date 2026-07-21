@@ -106,6 +106,15 @@ function detectarFilaEncabezado(filas: unknown[][]): number {
   return mejorIndice
 }
 
+export async function detectarEncabezadosCrudos(archivo: File): Promise<string[]> {
+  const buffer = await archivo.arrayBuffer()
+  const libro = XLSX.read(buffer, { type: 'array' })
+  const hoja = libro.Sheets[libro.SheetNames[0]]
+  const filasCrudas = XLSX.utils.sheet_to_json(hoja, { header: 1, defval: '' }) as unknown[][]
+  const indiceEncabezado = detectarFilaEncabezado(filasCrudas)
+  return (filasCrudas[indiceEncabezado] ?? []).map((valor) => normalizarTexto(valor))
+}
+
 function construirFilaDesdeRegistro(fila: Record<string, unknown>): FilaNominaImportada {
   const name = obtenerValorFila(fila, ['nombre', 'empleado', 'nombreempleado', 'nombrecompleto', 'nombres'])
   const cedula = obtenerValorFila(fila, ['cedula', 'cc', 'documento', 'identificacion', 'identificacionempleado'])
