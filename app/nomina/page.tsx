@@ -7,9 +7,11 @@ import { useUser } from '@/lib/hooks/useUser'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase/client'
 import { liquidarNomina, type RiesgoARL } from '@/lib/nomina/calculo'
-import { parseExcelNomina, guardarNominaProgramada } from '@/lib/nomina/importarExcel'
+import { parseExcelNomina, guardarNominaProgramada, detectarEncabezadosCrudos } from '@/lib/nomina/importarExcel'
 import { conciliarExtractoPdf, type RegistroPendiente } from '@/lib/nomina/conciliacionBancaria'
 import { useNomina, type MetodoConciliacion } from '@/lib/hooks/useNomina'
+import { calcularHuellaEncabezados, buscarMapeoGuardado } from '@/lib/nomina/mapeoColumnas'
+import MapeoColumnasModal from '@/components/nomina/MapeoColumnasModal'
 
 type Empleado = {
   id: string; empresa_id: string; nombre: string; cedula: string
@@ -72,6 +74,10 @@ function NominaContenido() {
   const [conciliando, setConciliando] = useState(false)
   const [mensajeImportacion, setMensajeImportacion] = useState<string|null>(null)
   const [mensajeConciliacion, setMensajeConciliacion] = useState<string|null>(null)
+  const [probandoMapeo, setProbandoMapeo] = useState(false)
+  const [modalMapeoAbierto, setModalMapeoAbierto] = useState(false)
+  const [encabezadosParaMapear, setEncabezadosParaMapear] = useState<string[]>([])
+  const [mensajeMapeo, setMensajeMapeo] = useState<string|null>(null)
   const [nombre, setNombre] = useState(''); const [cedula, setCedula] = useState('')
   const [puesto, setPuesto] = useState(''); const [salario, setSalario] = useState('')
   const [riesgo, setRiesgo] = useState<RiesgoARL>('I')
@@ -128,6 +134,27 @@ function NominaContenido() {
       setMensajeImportacion(p.join(' ')); await cargarNominaProgramada()
     } catch(err) { setError(err instanceof Error?err.message:'Error importando.') }
     finally { setImportando(false) }
+  }
+
+  async function manejarPruebaMapeoColumnas(ev: React.ChangeEvent<HTMLInputElement>) {
+    const f=ev.target.files?.[0]; ev.target.value=''; if (!f||!empresaActiva?.id) return
+    setProbandoMapeo(true); setError(null); setMensajeMapeo(null)
+    try {
+      const encabezados = await detectarEncabezadosCrudos(f)
+      const huella = calcularHuellaEncabezados(encabezados)
+      const mapeoExistente = await buscarMapeoGuardado(empresaActiva.id, huella)
+      if (mapeoExistente) {
+        // TODO (Fase 3): usar mapeoExistente directamente para parsear el Excel sin mostrar el modal
+        setMensajeMapeo('Ya existe un mapeo guardado para esta plantilla.')
+      } else {
+        setEncabezadosParaMapear(encabezados)
+        setModalMapeoAbierto(true)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error detectando encabezados.')
+    } finally {
+      setProbandoMapeo(false)
+    }
   }
 
   async function manejarConciliacionPdf(ev: React.ChangeEvent<HTMLInputElement>) {
@@ -222,10 +249,15 @@ function NominaContenido() {
                   {conciliando?<><span className="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full"/>Conciliando...</>:<>⇄ Conciliar PDF</>}
                   <input type="file" accept="application/pdf" onChange={manejarConciliacionPdf} disabled={conciliando||nominaProgramada.length===0} className="hidden"/>
                 </label>
+                <label className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium border shadow-sm cursor-pointer transition-all active:scale-[0.98] ${probandoMapeo?'text-slate-400 border-slate-200 bg-slate-50':'text-slate-600 border-slate-200 bg-white hover:bg-slate-50'}`}>
+                  {probandoMapeo?<><span className="animate-spin w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full"/>Analizando...</>:<>🔧 Probar mapeo de columnas</>}
+                  <input type="file" accept=".xlsx,.xls,.csv" onChange={manejarPruebaMapeoColumnas} disabled={probandoMapeo||!empresaActiva?.id} className="hidden"/>
+                </label>
               </div>
             </div>
             {mensajeImportacion&&<AlertaBanner mensaje={mensajeImportacion} tipo="success"/>}
             {mensajeConciliacion&&<AlertaBanner mensaje={mensajeConciliacion} tipo="info"/>}
+            {mensajeMapeo&&<AlertaBanner mensaje={mensajeMapeo} tipo="info"/>}
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <KpiCard label="Total neto del periodo" valor={`$${Math.round(res.totalNeto).toLocaleString()}`} color="slate"/>
               <KpiCard label="Pagados" valor={String(res.pagados)} color="emerald"/>
@@ -310,6 +342,14 @@ function NominaContenido() {
 
         </div>
       </main>
+      {modalMapeoAbierto && empresaActiva?.id && (
+        <MapeoColumnasModal
+          encabezados={encabezadosParaMapear}
+          empresaId={empresaActiva.id}
+          onCancelar={() => setModalMapeoAbierto(false)}
+          onGuardado={() => { setModalMapeoAbierto(false); setMensajeMapeo('Mapeo guardado correctamente.') }}
+        />
+      )}
     </div>
   )
 }
