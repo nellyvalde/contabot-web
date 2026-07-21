@@ -17,14 +17,14 @@ type Props = {
 }
 
 export default function MapeoColumnasModal({ encabezados, empresaId, onGuardado, onCancelar }: Props) {
-  const [mapeo, setMapeo] = useState<MapeoColumnas>(() =>
-    Object.fromEntries(encabezados.map((encabezado) => [encabezado, 'ignorar' as CampoContable]))
+  const [mapeoPorIndice, setMapeoPorIndice] = useState<CampoContable[]>(() =>
+    encabezados.map(() => 'ignorar')
   )
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  function asignarCampo(encabezado: string, campo: CampoContable) {
-    setMapeo((prev) => ({ ...prev, [encabezado]: campo }))
+  function asignarCampo(indice: number, campo: CampoContable) {
+    setMapeoPorIndice((prev) => prev.map((c, i) => (i === indice ? campo : c)))
   }
 
   async function guardarMapeo() {
@@ -32,8 +32,10 @@ export default function MapeoColumnasModal({ encabezados, empresaId, onGuardado,
     setError(null)
     try {
       const huella = calcularHuellaEncabezados(encabezados)
-      await guardarMapeoColumnas(empresaId, huella, mapeo)
-      onGuardado(mapeo)
+      const mapeoFinal: MapeoColumnas = {}
+      encabezados.forEach((encabezado, i) => { mapeoFinal[encabezado] = mapeoPorIndice[i] })
+      await guardarMapeoColumnas(empresaId, huella, mapeoFinal)
+      onGuardado(mapeoFinal)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error guardando el mapeo.')
     } finally {
@@ -54,15 +56,15 @@ export default function MapeoColumnasModal({ encabezados, empresaId, onGuardado,
 
         <div className="space-y-3">
           {encabezados.map((encabezado, i) => (
-            <div key={`${encabezado}-${i}`} className="flex items-center gap-3">
+            <div key={i} className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate" title={encabezado}>
                   {encabezado || `Columna ${i + 1}`}
                 </p>
               </div>
               <select
-                value={mapeo[encabezado]}
-                onChange={(e) => asignarCampo(encabezado, e.target.value as CampoContable)}
+                value={mapeoPorIndice[i]}
+                onChange={(e) => asignarCampo(i, e.target.value as CampoContable)}
                 className="w-56 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
               >
                 {CAMPOS_CONTABLES.map((campo) => (
