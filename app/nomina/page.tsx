@@ -127,7 +127,7 @@ function NominaContenido() {
     const f=ev.target.files?.[0]; ev.target.value=''; if (!f||!user?.id) return
     setImportando(true); setError(null); setMensajeImportacion(null)
     try {
-      const filas=await parseExcelNomina(f); const r=await guardarNominaProgramada(filas,user.id,periodoContable,empresaActiva!.id)
+      const filas=await parseExcelNomina(f, empresaActiva!.id); const r=await guardarNominaProgramada(filas,user.id,periodoContable,empresaActiva!.id)
       const p=[`${r.filasInsertadas} nuevo(s), ${r.filasActualizadas} actualizado(s).`]
       if (r.filasOmitidas.length>0) p.push(`${r.filasOmitidas.length} omitida(s).`)
       if (r.alertasUgpp.length>0) p.push(`⚠️ Riesgo UGPP: ${r.alertasUgpp.map(a=>a.nombre).join(', ')}.`)
@@ -144,7 +144,7 @@ function NominaContenido() {
       const huella = calcularHuellaEncabezados(encabezados)
       const mapeoExistente = await buscarMapeoGuardado(empresaActiva.id, huella)
       if (mapeoExistente) {
-        // TODO (Fase 3): usar mapeoExistente directamente para parsear el Excel sin mostrar el modal
+        // Fase 3: el mapeo guardado ya se usa automaticamente en parseExcelNomina() al importar.
         setMensajeMapeo('Ya existe un mapeo guardado para esta plantilla.')
       } else {
         setEncabezadosParaMapear(encabezados)

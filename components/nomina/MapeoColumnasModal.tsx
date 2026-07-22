@@ -32,8 +32,9 @@ export default function MapeoColumnasModal({ encabezados, empresaId, onGuardado,
     setError(null)
     try {
       const huella = calcularHuellaEncabezados(encabezados)
-      const mapeoFinal: MapeoColumnas = {}
-      encabezados.forEach((encabezado, i) => { mapeoFinal[encabezado] = mapeoPorIndice[i] })
+      // Se guarda indexado por posicion (mapeoPorIndice tal cual), no por texto de encabezado.
+      // Esto evita que columnas con encabezado vacio o duplicado colisionen al persistir.
+      const mapeoFinal: MapeoColumnas = [...mapeoPorIndice]
       await guardarMapeoColumnas(empresaId, huella, mapeoFinal)
       onGuardado(mapeoFinal)
     } catch (err) {

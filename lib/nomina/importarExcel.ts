@@ -1,5 +1,6 @@
-﻿import * as XLSX from 'xlsx'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase/client'
+import { buscarMapeoGuardado, calcularHuellaEncabezados, type CampoContable, type MapeoColumnas } from './mapeoColumnas'
 
 export type FilaNominaImportada = {
   nombreEmpleado: string
@@ -36,16 +37,42 @@ function normalizarCabecera(valor: unknown): string {
     .replace(/[^a-z0-9]/g, '')
 }
 
-function parseNumber(valor: unknown): number {
-  if (typeof valor === 'number' && Number.isFinite(valor)) return valor
-  if (typeof valor === 'string') {
-    const limpio = valor.replace(/[^\d,.-]/g, '').trim()
-    if (!limpio) return 0
-    const normalizado = limpio.replace(/\./g, '').replace(/,/, '.')
-    const numero = Number(normalizado)
-    return Number.isFinite(numero) ? numero : 0
-  }
-  return 0
+// Saneamiento de montos en formato moneda colombiana: "$ 1.500.000,00", "#N/A", null, etc.
+function limpiarMontoMoneda(valor: unknown): number {
+  if (valor === null || valor === undefined || valor === '') return 0
+  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : 0
+  const texto = String(valor).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')
+  const numero = parseFloat(texto)
+  return Number.isFinite(numero) ? numero : 0
+}
+
+// Evita cedulas del tipo "1018234567.0" que Excel genera al tratar el campo como numero.
+function limpiarCedula(valor: unknown): string {
+  if (!valor) return ''
+  const texto = String(valor).trim()
+  if (texto.includes('.')) return texto.split('.')[0]
+  return texto.replace(/[^0-9kK]/g, '')
+}
+
+function esFilaTotalOFirma(fila: unknown[]): boolean {
+  const textoFila = normalizarCabecera(fila.map((c) => normalizarTexto(c)).join(' '))
+  return (
+    textoFila.includes('total') ||
+    textoFila.includes('elaborad') ||
+    textoFila.includes('revisad') ||
+    textoFila.includes('aprobad') ||
+    textoFila.includes('firma')
+  )
+}
+
+// Calculo real de Ley 1393 de 2010: los pagos no constitutivos de salario (bonificaciones)
+// no pueden superar el 40% del total devengado. El exceso sí genera base de aportes a
+// seguridad social y por lo tanto riesgo de fiscalizacion UGPP si no se aporta sobre el.
+function calcularLey1393(sueldoBase: number, bonificaciones: number): { excesoLey1393: number; alertaRiesgoUgpp: boolean } {
+  const devengadoSinTransporte = sueldoBase + bonificaciones
+  const tope40 = devengadoSinTransporte * 0.4
+  const excesoLey1393 = Math.max(0, bonificaciones - tope40)
+  return { excesoLey1393, alertaRiesgoUgpp: excesoLey1393 > 0 }
 }
 
 function obtenerValorFila(fila: Record<string, unknown>, aliases: string[]): string {
@@ -65,19 +92,19 @@ function obtenerValorFila(fila: Record<string, unknown>, aliases: string[]): str
 }
 
 function leerNumeroFila(fila: Record<string, unknown>, aliases: string[]): number {
-  return parseNumber(obtenerValorFila(fila, aliases))
+  return limpiarMontoMoneda(obtenerValorFila(fila, aliases))
 }
 
 const KEYWORDS_ENCABEZADO = [
-  'nombre', 'empleado', 'nombreempleado', 'nombrecompleto', 'nombres',
+  'nombre', 'empleado', 'nombreempleado', 'nombrecompleto', 'nombres', 'colaborador', 'trabajador',
   'cedula', 'cc', 'documento', 'identificacion', 'identificacionempleado',
-  'area', 'departamento', 'cargo',
+  'area', 'departamento', 'cargo', 'centrodecosto',
   'salario', 'salariobase', 'sueldo', 'basico', 'salariobasemensual',
   'auxiliotransporte', 'transporte',
-  'bonificaciones', 'bono',
+  'bonificaciones', 'bono', 'comisiones', 'otrosdevengados',
   'prima',
   'cesantias',
-  'neto', 'netopagado', 'netoapagar', 'valorpagar', 'pagar',
+  'neto', 'netopagado', 'netoapagar', 'valorpagar', 'pagar', 'saldoapagar',
   'excesoley1393', 'exceso', 'riesgo',
 ].map((palabra) => normalizarCabecera(palabra))
 
@@ -115,49 +142,102 @@ export async function detectarEncabezadosCrudos(archivo: File): Promise<string[]
   return (filasCrudas[indiceEncabezado] ?? []).map((valor) => normalizarTexto(valor))
 }
 
+// PASO 3-5 del pipeline cuando SI existe un mapeo manual guardado para esta empresa/plantilla:
+// saneamiento + construccion de la fila usando la posicion de columna, no el texto del encabezado.
+function construirFilaPorPosicion(filaCruda: unknown[], mapeo: MapeoColumnas): FilaNominaImportada {
+  const valores: Partial<Record<CampoContable, unknown>> = {}
+  mapeo.forEach((campo, indice) => {
+    if (campo === 'ignorar') return
+    valores[campo] = filaCruda[indice]
+  })
+
+  const sueldoBase = limpiarMontoMoneda(valores.salarioBasico)
+  const bonificaciones = limpiarMontoMoneda(valores.bonificaciones)
+  const { excesoLey1393, alertaRiesgoUgpp } = calcularLey1393(sueldoBase, bonificaciones)
+  const auxilioTransporte = limpiarMontoMoneda(valores.auxilioTransporte)
+  const prima = limpiarMontoMoneda(valores.abonoPrima)
+  const cesantias = limpiarMontoMoneda(valores.cesantias)
+  const netoPagarLeido = limpiarMontoMoneda(valores.netoPagado)
+
+  return {
+    nombreEmpleado: normalizarTexto(valores.nombreEmpleado),
+    cedula: limpiarCedula(valores.cedula),
+    area: normalizarTexto(valores.areaCargo) || null,
+    sueldoBase,
+    auxilioTransporte,
+    bonificaciones,
+    prima,
+    cesantias,
+    netoPagar: netoPagarLeido || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias,
+    excesoLey1393,
+    alertaRiesgoUgpp,
+  }
+}
+
+// Ruta de respaldo (sin mapeo guardado aun): deteccion difusa por alias de texto.
 function construirFilaDesdeRegistro(fila: Record<string, unknown>): FilaNominaImportada {
-  const name = obtenerValorFila(fila, ['nombre', 'empleado', 'nombreempleado', 'nombrecompleto', 'nombres'])
+  const name = obtenerValorFila(fila, ['nombre', 'empleado', 'nombreempleado', 'nombrecompleto', 'nombres', 'colaborador', 'trabajador'])
   const cedula = obtenerValorFila(fila, ['cedula', 'cc', 'documento', 'identificacion', 'identificacionempleado'])
-  const area = obtenerValorFila(fila, ['area', 'departamento', 'cargo']) || null
+  const area = obtenerValorFila(fila, ['area', 'departamento', 'cargo', 'centro de costo']) || null
   const sueldoBase = leerNumeroFila(fila, ['salario', 'salario_base', 'sueldo', 'basico', 'salario_base_mensual'])
   const auxilioTransporte = leerNumeroFila(fila, ['auxilio_transporte', 'auxiliotransporte', 'transporte'])
-  const bonificaciones = leerNumeroFila(fila, ['bonificaciones', 'bono'])
+  const bonificaciones = leerNumeroFila(fila, ['bonificaciones', 'bono', 'comisiones', 'otros devengados'])
   const prima = leerNumeroFila(fila, ['prima'])
   const cesantias = leerNumeroFila(fila, ['cesantias'])
-  const netoPagar = leerNumeroFila(fila, ['netopagado', 'neto_pagado', 'netoapagar', 'valorpagar', 'pagar']) || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias
-  const excesoLey1393 = leerNumeroFila(fila, ['excesoley1393', 'exceso', 'riesgo'])
+  const netoPagarLeido = leerNumeroFila(fila, ['netopagado', 'neto_pagado', 'netoapagar', 'valorpagar', 'pagar', 'saldo a pagar'])
+  const { excesoLey1393, alertaRiesgoUgpp } = calcularLey1393(sueldoBase, bonificaciones)
 
   return {
     nombreEmpleado: name.trim(),
-    cedula: cedula.trim(),
+    cedula: limpiarCedula(cedula),
     area,
     sueldoBase,
     auxilioTransporte,
     bonificaciones,
     prima,
     cesantias,
-    netoPagar,
+    netoPagar: netoPagarLeido || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias,
     excesoLey1393,
-    alertaRiesgoUgpp: excesoLey1393 > 0,
+    alertaRiesgoUgpp,
   }
 }
 
-export async function parseExcelNomina(archivo: File): Promise<FilaNominaImportada[]> {
+/**
+ * Pipeline de importacion: [Excel crudo] -> deteccion de encabezado -> mapeo guardado
+ * (si existe para esta empresa/plantilla) o deteccion difusa de respaldo -> saneamiento
+ * de celdas -> filtro de totales/firmas -> [FilaNominaImportada[]]
+ */
+export async function parseExcelNomina(archivo: File, empresaId: string): Promise<FilaNominaImportada[]> {
   const buffer = await archivo.arrayBuffer()
   const libro = XLSX.read(buffer, { type: 'array' })
   const hoja = libro.Sheets[libro.SheetNames[0]]
   const filasCrudas = XLSX.utils.sheet_to_json(hoja, { header: 1, defval: '' }) as unknown[][]
   const indiceEncabezado = detectarFilaEncabezado(filasCrudas)
   const encabezados = (filasCrudas[indiceEncabezado] ?? []).map((valor) => normalizarTexto(valor))
-  const filas = filasCrudas.slice(indiceEncabezado + 1).map((filaCruda) => {
-    const registro: Record<string, unknown> = {}
-    encabezados.forEach((encabezado, indice) => {
-      if (encabezado) registro[encabezado] = filaCruda[indice] ?? ''
-    })
-    return registro
-  })
+  const huella = calcularHuellaEncabezados(encabezados)
 
-  return filas.map((fila) => construirFilaDesdeRegistro(fila)).filter((fila) => Boolean(fila.nombreEmpleado && fila.cedula))
+  const filasDatos = filasCrudas
+    .slice(indiceEncabezado + 1)
+    .filter((fila) => Array.isArray(fila) && fila.length > 0 && !esFilaTotalOFirma(fila))
+
+  const mapeoGuardado = await buscarMapeoGuardado(empresaId, huella)
+
+  let resultados: FilaNominaImportada[]
+
+  if (mapeoGuardado) {
+    resultados = filasDatos.map((fila) => construirFilaPorPosicion(fila, mapeoGuardado))
+  } else {
+    const registros = filasDatos.map((filaCruda) => {
+      const registro: Record<string, unknown> = {}
+      encabezados.forEach((encabezado, indice) => {
+        if (encabezado) registro[encabezado] = filaCruda[indice] ?? ''
+      })
+      return registro
+    })
+    resultados = registros.map((fila) => construirFilaDesdeRegistro(fila))
+  }
+
+  return resultados.filter((fila) => Boolean(fila.nombreEmpleado && fila.cedula))
 }
 
 export async function guardarNominaProgramada(
