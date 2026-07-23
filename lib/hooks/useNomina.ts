@@ -28,6 +28,7 @@ export type FilaNomina = {
   alertaRiesgoUgpp: boolean
   estado: EstadoPago
   metodoConciliacion: MetodoConciliacion
+  archivoUrl: string | null
 }
 
 export function useNomina(periodoContable: string) {
@@ -49,7 +50,7 @@ export function useNomina(periodoContable: string) {
 
     const { data, error: e } = await supabase
       .from('nomina_programada')
-      .select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion')
+      .select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion,archivo_url')
       .eq('empresa_id', empresaActiva.id)
       .eq('periodo_contable', periodoContable)
       .order('id')
@@ -82,6 +83,7 @@ export function useNomina(periodoContable: string) {
       alertaRiesgoUgpp: Boolean(f.alerta_riesgo_ugpp),
       estado: f.estado ?? 'Pendiente de Pago',
       metodoConciliacion: f.metodo_conciliacion ?? null,
+      archivoUrl: f.archivo_url ?? null,
     })))
     setCargando(false)
   }, [empresaActiva?.id, periodoContable, user?.id])

@@ -273,7 +273,7 @@ function NominaContenido() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
-                      {['Empleado','Cédula','Básico','Transporte','Bonos','Prima','Cesantías','Neto','Ley 1393','Estado','Acción'].map(h=>(
+                      {['Empleado','Cédula','Básico','Transporte','Bonos','Prima','Cesantías','Neto','Ley 1393','Estado','Soporte','Acción'].map(h=>(
                         <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -291,6 +291,13 @@ function NominaContenido() {
                         <td className="px-4 py-3.5 text-right font-semibold text-slate-900 whitespace-nowrap">${Math.round(fila.netoPagar).toLocaleString()}</td>
                         <td className="px-4 py-3.5">{fila.alertaRiesgoUgpp?<Badge color="red" dot label="Riesgo UGPP" title={`Exceso: $${fila.excesoLey1393.toLocaleString()}`}/>:<Badge color="slate" label="OK"/>}</td>
                         <td className="px-4 py-3.5"><Badge color={fila.estado==='Pagado'?'emerald':'amber'} dot label={fila.estado==='Pagado'?fila.metodoConciliacion==='automatico_valor'?'Pagado (auto)':'Pagado':'Pendiente'}/></td>
+                        <td className="px-4 py-3.5">
+                          {fila.archivoUrl?(
+                            <a href={fila.archivoUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm hover:bg-blue-50 whitespace-nowrap">📄 Ver</a>
+                          ):(
+                            <span className="text-slate-300 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3.5">
                           <button onClick={()=>togglePagoManual(fila.id)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:border-slate-300 active:scale-[0.97] transition-all whitespace-nowrap">
                             {fila.estado==='Pagado'?'↩ Revertir':'✓ Marcar pagado'}
