@@ -1,6 +1,6 @@
 -- Migration: Create whatsapp_numeros_autorizados table (intake de soportes via WhatsApp)
 -- Path: supabase/migrations/20260722_create_whatsapp_numeros_autorizados.sql
--- NO APLICADA TODAVIA. Requiere aprobacion antes de ejecutar en Supabase.
+-- APLICADA en Supabase el 2026-07-23, aprobada por Nelly en chat.
 --
 -- Que hace: mapea un numero de WhatsApp (formato E.164 sin '+', ej '573001234567')
 -- a la empresa_id correspondiente, para que el webhook sepa a que empresa pertenece
