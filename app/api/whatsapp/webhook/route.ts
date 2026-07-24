@@ -13,7 +13,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { clasificarDocumento } from '@/lib/documentos/clasificarDocumento'
-import { intentarMatchNomina, marcarNominaPagada } from '@/lib/nomina/matchSoporte'
+import { intentarMatchNomina } from '@/lib/nomina/matchSoporte'
+import { registrarAbono } from '@/lib/nomina/abonos'
 import { obtenerUrlMedia, descargarMedia, enviarMensajeTexto } from '@/lib/whatsapp/graphApi'
 
 export async function GET(request: NextRequest) {
@@ -116,12 +117,45 @@ export async function POST(request: NextRequest) {
       const resultado = await intentarMatchNomina(datos, empresa.id)
 
       if (resultado.match) {
-        await marcarNominaPagada(resultado.empleadoId, archivoUrl, 'Conciliado desde WhatsApp')
+        const valorAbono = datos.valor_total || datos.valor || 0
+        // media.id es unico por cada archivo que Meta entrega: sirve como llave de
+        // idempotencia natural, evita contar dos veces el mismo comprobante si Meta
+        // reintenta la entrega del webhook.
+        const resultadoAbono = await registrarAbono({
+          empresaId: empresa.id,
+          obligacionId: Number(resultado.empleadoId),
+          valorAbonado: valorAbono,
+          referencia: `whatsapp:${media.id}`,
+          origen: 'whatsapp',
+          archivoUrl,
+          admin: true,
+        })
+
+        if (resultadoAbono.ok && resultadoAbono.duplicado) {
+          await enviarMensajeTexto({
+            phoneNumberId,
+            accessToken,
+            to: remitente,
+            texto: `📌 Este comprobante ya había sido registrado antes para ${resultado.nombreEmpleado}, no lo conté de nuevo.`,
+          })
+          return NextResponse.json({ ok: true })
+        }
+
+        if (!resultadoAbono.ok) {
+          console.error('[WhatsApp webhook] Error registrando abono:', resultadoAbono.error)
+          return NextResponse.json({ ok: true })
+        }
+
+        const textoEstado =
+          resultadoAbono.estado === 'Pagado'
+            ? `Queda pagado en su totalidad.`
+            : `Pago parcial registrado. Saldo pendiente: $${Math.round(resultadoAbono.saldoPendiente).toLocaleString('es-CO')}.`
+
         await enviarMensajeTexto({
           phoneNumberId,
           accessToken,
           to: remitente,
-          texto: `✅ Recibido. Vinculé este soporte al pago de nómina de ${resultado.nombreEmpleado}.`,
+          texto: `✅ Recibido. Vinculé este soporte al pago de nómina de ${resultado.nombreEmpleado}. ${textoEstado}`,
         })
         return NextResponse.json({ ok: true })
       }

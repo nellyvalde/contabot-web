@@ -29,12 +29,14 @@ export async function intentarMatchNomina(datos: DatosDocumentoIA, empresaId: st
   const supabase = createAdminClient()
   const periodo = obtenerPeriodoDeFecha(datos.fecha_emision || datos.fecha)
 
+  // Incluye obligaciones ya con un abono parcial: un segundo (o tercer) pago debe poder
+  // seguir encontrando a la misma persona hasta completar el valor causado.
   const { data: empData } = await supabase
     .from('nomina_programada')
-    .select('id, nombre_empleado, cedula, neto_pagar')
+    .select('id, nombre_empleado, cedula, neto_pagar, valor_causado, saldo_anterior')
     .eq('empresa_id', empresaId)
     .eq('periodo_contable', periodo)
-    .eq('estado', 'Pendiente de Pago')
+    .in('estado', ['Pendiente de Pago', 'Pago parcial'])
 
   if (!empData || empData.length === 0) {
     return { match: false, razon: `No hay pagos de nomina pendientes para el periodo ${periodo}.` }
@@ -70,12 +72,14 @@ export async function intentarMatchNomina(datos: DatosDocumentoIA, empresaId: st
       }
     }
 
-    if (coincideNombre && Math.abs(Number(emp.neto_pagar) - Number(valorDoc)) <= 10) {
+    // El match por nombre/alias NO exige que el valor coincida: puede ser un abono
+    // parcial. La cedula/nombre es lo que define al beneficiario, no el monto.
+    if (coincideNombre) {
       return { match: true, empleadoId: emp.id, nombreEmpleado: emp.nombre_empleado, cedula: emp.cedula }
     }
   }
 
-  // 2. Coincidencia por Valor Unico (+/- 10)
+  // 2. Coincidencia por Valor Unico (+/- 10), solo cuando no hubo match por nombre.
   const coincidenValor = empData.filter((e) => Math.abs(Number(e.neto_pagar) - Number(valorDoc)) <= 10)
   if (coincidenValor.length === 1) {
     const emp = coincidenValor[0]
