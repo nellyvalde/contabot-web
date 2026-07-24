@@ -1,4 +1,4 @@
-// Trigger redeploy: recoger nuevas variables de entorno de WhatsApp (test)
+// Trigger redeploy: recoger WHATSAPP_ACCESS_TOKEN renovado (2026-07-24T09:23:31Z)
 // app/api/whatsapp/webhook/route.ts
 // Recibe soportes (facturas, comprobantes de pago, gastos) enviados por WhatsApp,
 // los clasifica con IA y, si es un comprobante de pago de nomina, lo vincula
