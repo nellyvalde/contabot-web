@@ -11,6 +11,10 @@ export type CampoContable =
   | 'abonoPrima'
   | 'cesantias'
   | 'netoPagado'
+  | 'valorCausado'
+  | 'valorAbonado'
+  | 'receptorPago'
+  | 'observacionesAbono'
   | 'ignorar'
 
 // Mapeo indexado por POSICION de columna (no por texto de encabezado).
@@ -30,6 +34,10 @@ export const CAMPOS_CONTABLES: { value: CampoContable; label: string }[] = [
   { value: 'abonoPrima', label: 'Abono/Prima' },
   { value: 'cesantias', label: 'Cesantías' },
   { value: 'netoPagado', label: 'Neto a Pagar' },
+  { value: 'valorCausado', label: 'Valor Causado (turnos/servicios)' },
+  { value: 'valorAbonado', label: 'Valor Abonado' },
+  { value: 'receptorPago', label: 'Receptor del Pago (si es distinto)' },
+  { value: 'observacionesAbono', label: 'Observaciones' },
   { value: 'ignorar', label: 'Ignorar esta columna' },
 ]
 

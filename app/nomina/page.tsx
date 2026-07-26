@@ -18,7 +18,7 @@ type Empleado = {
   puesto: string; salario_base: number; riesgo_arl: RiesgoARL; activo: boolean
 }
 type LiquidacionVista = { empleado_id: string; neto_a_pagar: number; pago_realizado: boolean }
-type EstadoPago = 'Pendiente de Pago' | 'Pagado'
+type EstadoPago = 'Pendiente de Pago' | 'Pago parcial' | 'Pagado'
 type FilaNominaProgramada = {
   id: number; nombreEmpleado: string; cedula: string; area: string | null
   sueldoBase: number; cuentaPucBasico: string; auxilioTransporte: number; cuentaPucTransporte: string
@@ -26,6 +26,8 @@ type FilaNominaProgramada = {
   abonoPrima: number; cesantias: number; abonoCesantias: number; abonoLiquidacion: number
   netoPagar: number; excesoLey1393: number; alertaRiesgoUgpp: boolean
   estado: EstadoPago; metodoConciliacion: MetodoConciliacion
+  valorCausado: number | null; saldoAnterior: number; totalAbonado: number; saldoPendiente: number
+  observaciones: string | null
 }
 
 const NOMBRES_MES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -34,9 +36,9 @@ const construirPeriodoContable = (mes: number, anio: number) => `${anio}-${Strin
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl bg-white p-6 shadow-[0_2px_16px_rgba(0,0,0,0.06)] border border-slate-100">{children}</div>
 }
-function Badge({ label, color, dot, title }: { label: string; color: 'emerald'|'amber'|'red'|'slate'; dot?: boolean; title?: string }) {
-  const s = { emerald:'bg-emerald-50 text-emerald-700 ring-emerald-200', amber:'bg-amber-50 text-amber-700 ring-amber-200', red:'bg-red-50 text-red-700 ring-red-200', slate:'bg-slate-100 text-slate-500 ring-slate-200' }
-  const d = { emerald:'bg-emerald-500', amber:'bg-amber-400', red:'bg-red-500', slate:'bg-slate-400' }
+function Badge({ label, color, dot, title }: { label: string; color: 'emerald'|'amber'|'red'|'slate'|'blue'; dot?: boolean; title?: string }) {
+  const s = { emerald:'bg-emerald-50 text-emerald-700 ring-emerald-200', amber:'bg-amber-50 text-amber-700 ring-amber-200', red:'bg-red-50 text-red-700 ring-red-200', slate:'bg-slate-100 text-slate-500 ring-slate-200', blue:'bg-blue-50 text-blue-700 ring-blue-200' }
+  const d = { emerald:'bg-emerald-500', amber:'bg-amber-400', red:'bg-red-500', slate:'bg-slate-400', blue:'bg-blue-500' }
   return <span title={title} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${s[color]}`}>{dot && <span className={`w-1.5 h-1.5 rounded-full ${d[color]}`}/>}{label}</span>
 }
 function AlertaBanner({ mensaje, tipo }: { mensaje: string; tipo: 'success'|'error'|'info' }) {
@@ -98,7 +100,7 @@ function NominaContenido() {
 
   const totalNomina = useMemo(() => empleados.reduce((s,e) => s+e.salario_base,0), [empleados])
   const totalPendiente = useMemo(() => { const ids = new Set(liquidaciones.filter(l=>l.pago_realizado).map(l=>l.empleado_id)); return empleados.filter(e=>!ids.has(e.id)).reduce((s,e)=>s+e.salario_base,0) }, [empleados,liquidaciones])
-  const res = useMemo(() => ({ totalNeto:nominaProgramada.reduce((s,f)=>s+f.netoPagar,0), pendientes:nominaProgramada.filter(f=>f.estado==='Pendiente de Pago').length, pagados:nominaProgramada.filter(f=>f.estado==='Pagado').length, enRiesgo:nominaProgramada.filter(f=>f.alertaRiesgoUgpp).length }), [nominaProgramada])
+  const res = useMemo(() => ({ totalNeto:nominaProgramada.reduce((s,f)=>s+f.netoPagar,0), pendientes:nominaProgramada.filter(f=>f.estado==='Pendiente de Pago').length, parciales:nominaProgramada.filter(f=>f.estado==='Pago parcial').length, pagados:nominaProgramada.filter(f=>f.estado==='Pagado').length, enRiesgo:nominaProgramada.filter(f=>f.alertaRiesgoUgpp).length }), [nominaProgramada])
 
   async function agregarEmpleado() {
     if (!empresaId||!nombre.trim()||!cedula.trim()||!puesto.trim()||!salario.trim()) { setError('Todos los campos son obligatorios.'); return }
@@ -273,7 +275,7 @@ function NominaContenido() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
-                      {['Empleado','Cédula','Básico','Transporte','Bonos','Prima','Cesantías','Neto','Ley 1393','Estado','Acción'].map(h=>(
+                      {['Empleado','Cédula','Básico','Transporte','Bonos','Prima','Cesantías','Neto','Causado','Abonado','Saldo','Ley 1393','Estado','Observaciones','Soporte','Acción'].map(h=>(
                         <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -289,8 +291,25 @@ function NominaContenido() {
                         <CeldaMoneda valor={fila.prima} cuenta={fila.cuentaPucPrima}/>
                         <td className="px-4 py-3.5 text-right text-slate-600">${fila.cesantias.toLocaleString()}</td>
                         <td className="px-4 py-3.5 text-right font-semibold text-slate-900 whitespace-nowrap">${Math.round(fila.netoPagar).toLocaleString()}</td>
+                        <td className="px-4 py-3.5 text-right text-slate-600 whitespace-nowrap">{fila.valorCausado!=null?`$${Math.round(fila.valorCausado).toLocaleString()}`:'—'}</td>
+                        <td className="px-4 py-3.5 text-right text-slate-600 whitespace-nowrap">{fila.valorCausado!=null?`$${Math.round(fila.totalAbonado).toLocaleString()}`:'—'}</td>
+                        <td className="px-4 py-3.5 text-right font-semibold whitespace-nowrap">{fila.valorCausado!=null?`$${Math.round(fila.saldoPendiente).toLocaleString()}`:'—'}</td>
                         <td className="px-4 py-3.5">{fila.alertaRiesgoUgpp?<Badge color="red" dot label="Riesgo UGPP" title={`Exceso: $${fila.excesoLey1393.toLocaleString()}`}/>:<Badge color="slate" label="OK"/>}</td>
-                        <td className="px-4 py-3.5"><Badge color={fila.estado==='Pagado'?'emerald':'amber'} dot label={fila.estado==='Pagado'?fila.metodoConciliacion==='automatico_valor'?'Pagado (auto)':'Pagado':'Pendiente'}/></td>
+                        <td className="px-4 py-3.5">
+                          <Badge
+                            color={fila.estado==='Pagado'?'emerald':fila.estado==='Pago parcial'?'blue':'amber'}
+                            dot
+                            label={fila.estado==='Pagado'?(fila.metodoConciliacion==='automatico_valor'?'Pagado (auto)':'Pagado'):fila.estado==='Pago parcial'?'Pago parcial':'Pendiente'}
+                          />
+                        </td>
+                        <td className="px-4 py-3.5 max-w-[220px] truncate text-slate-500 text-xs" title={fila.observaciones ?? ''}>{fila.observaciones || '—'}</td>
+                        <td className="px-4 py-3.5">
+                          {fila.archivoUrl?(
+                            <a href={fila.archivoUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm hover:bg-blue-50 whitespace-nowrap">📄 Ver</a>
+                          ):(
+                            <span className="text-slate-300 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3.5">
                           <button onClick={()=>togglePagoManual(fila.id)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:border-slate-300 active:scale-[0.97] transition-all whitespace-nowrap">
                             {fila.estado==='Pagado'?'↩ Revertir':'✓ Marcar pagado'}

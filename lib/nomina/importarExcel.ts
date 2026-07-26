@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase/client'
 import { buscarMapeoGuardado, calcularHuellaEncabezados, type CampoContable, type MapeoColumnas } from './mapeoColumnas'
+import { obtenerSaldoPeriodoAnterior, periodoAnteriorDe, registrarAbono } from './abonos'
 
 export type FilaNominaImportada = {
   nombreEmpleado: string
@@ -14,6 +15,12 @@ export type FilaNominaImportada = {
   netoPagar: number
   excesoLey1393: number
   alertaRiesgoUgpp: boolean
+  // Campos opcionales del flujo de "abonos parciales" (turnos, servicios, contratistas).
+  // Si valorCausado no viene, la fila sigue el flujo tradicional de nomina de salario fijo.
+  valorCausado: number | null
+  valorAbonado: number
+  receptorPago: string | null
+  observaciones: string | null
 }
 
 export type ResultadoImportacion = {
@@ -21,6 +28,8 @@ export type ResultadoImportacion = {
   filasActualizadas: number
   filasOmitidas: string[]
   alertasUgpp: Array<{ nombre: string; valor: number }>
+  abonosRegistrados: number
+  abonosDuplicados: number
 }
 
 function normalizarTexto(valor: unknown): string {
@@ -158,6 +167,10 @@ function construirFilaPorPosicion(filaCruda: unknown[], mapeo: MapeoColumnas): F
   const prima = limpiarMontoMoneda(valores.abonoPrima)
   const cesantias = limpiarMontoMoneda(valores.cesantias)
   const netoPagarLeido = limpiarMontoMoneda(valores.netoPagado)
+  const valorCausadoLeido = valores.valorCausado !== undefined ? limpiarMontoMoneda(valores.valorCausado) : 0
+  const valorAbonado = limpiarMontoMoneda(valores.valorAbonado)
+  const observaciones = normalizarTexto(valores.observacionesAbono) || null
+  const receptorPago = normalizarTexto(valores.receptorPago) || null
 
   return {
     nombreEmpleado: normalizarTexto(valores.nombreEmpleado),
@@ -171,6 +184,10 @@ function construirFilaPorPosicion(filaCruda: unknown[], mapeo: MapeoColumnas): F
     netoPagar: netoPagarLeido || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias,
     excesoLey1393,
     alertaRiesgoUgpp,
+    valorCausado: valorCausadoLeido > 0 ? valorCausadoLeido : null,
+    valorAbonado,
+    receptorPago,
+    observaciones,
   }
 }
 
@@ -185,6 +202,10 @@ function construirFilaDesdeRegistro(fila: Record<string, unknown>): FilaNominaIm
   const prima = leerNumeroFila(fila, ['prima'])
   const cesantias = leerNumeroFila(fila, ['cesantias'])
   const netoPagarLeido = leerNumeroFila(fila, ['netopagado', 'neto_pagado', 'netoapagar', 'valorpagar', 'pagar', 'saldo a pagar'])
+  const valorCausadoLeido = leerNumeroFila(fila, ['valorcausado', 'valor_causado', 'causado', 'valorturnos'])
+  const valorAbonado = leerNumeroFila(fila, ['valorabonado', 'valor_abonado', 'abono', 'abonado'])
+  const observaciones = obtenerValorFila(fila, ['observaciones', 'observacion', 'notas', 'nota']) || null
+  const receptorPago = obtenerValorFila(fila, ['receptordelpago', 'receptor_pago', 'receptor', 'nombrereceptor']) || null
   const { excesoLey1393, alertaRiesgoUgpp } = calcularLey1393(sueldoBase, bonificaciones)
 
   return {
@@ -199,6 +220,10 @@ function construirFilaDesdeRegistro(fila: Record<string, unknown>): FilaNominaIm
     netoPagar: netoPagarLeido || sueldoBase + auxilioTransporte + bonificaciones + prima + cesantias,
     excesoLey1393,
     alertaRiesgoUgpp,
+    valorCausado: valorCausadoLeido > 0 ? valorCausadoLeido : null,
+    valorAbonado,
+    receptorPago,
+    observaciones,
   }
 }
 
@@ -251,7 +276,11 @@ export async function guardarNominaProgramada(
     filasActualizadas: 0,
     filasOmitidas: [],
     alertasUgpp: [],
+    abonosRegistrados: 0,
+    abonosDuplicados: 0,
   }
+
+  const periodoAnterior = periodoAnteriorDe(periodoContable)
 
   for (const fila of filas) {
     if (!fila.nombreEmpleado || !fila.cedula) {
@@ -271,6 +300,12 @@ export async function guardarNominaProgramada(
       throw new Error(existente.error.message)
     }
 
+    // Si la fila usa el flujo de "abonos" (valorCausado presente), se arrastra el saldo
+    // pendiente del periodo anterior SIN mezclarlo con los turnos/valor causado nuevo:
+    // quedan en columnas separadas (saldo_anterior vs valor_causado).
+    const saldoAnterior =
+      fila.valorCausado !== null ? await obtenerSaldoPeriodoAnterior(empresaId, fila.cedula, periodoAnterior) : 0
+
     const payload = {
       empresa_id: empresaId,
       periodo_contable: periodoContable,
@@ -285,6 +320,9 @@ export async function guardarNominaProgramada(
       neto_pagar: fila.netoPagar,
       exceso_ley_1393: fila.excesoLey1393,
       alerta_riesgo_ugpp: fila.alertaRiesgoUgpp,
+      valor_causado: fila.valorCausado,
+      saldo_anterior: saldoAnterior,
+      observaciones: fila.observaciones,
       estado: 'Pendiente de Pago',
       metodo_conciliacion: null,
       referencia_conciliacion: null,
@@ -292,14 +330,39 @@ export async function guardarNominaProgramada(
       user_id: userId,
     }
 
-    if (existente.data?.id) {
-      const { error } = await supabase.from('nomina_programada').update(payload).eq('id', existente.data.id)
+    let obligacionId: number | null = existente.data?.id ?? null
+
+    if (obligacionId) {
+      const { error } = await supabase.from('nomina_programada').update(payload).eq('id', obligacionId)
       if (error) throw new Error(error.message)
       resultado.filasActualizadas += 1
     } else {
-      const { error } = await supabase.from('nomina_programada').insert(payload)
+      const { data, error } = await supabase.from('nomina_programada').insert(payload).select('id').single()
       if (error) throw new Error(error.message)
+      obligacionId = data.id
       resultado.filasInsertadas += 1
+    }
+
+    // Si el Excel trae un valor abonado, se registra como abono (no como gasto nuevo)
+    // y el saldo pendiente se recalcula sumando todos los abonos de esta obligacion.
+    if (fila.valorAbonado > 0 && obligacionId) {
+      // Referencia estable para esta fila+importacion: evita contar el mismo comprobante
+      // dos veces si el mismo Excel se vuelve a importar.
+      const referencia = `excel:${empresaId}:${periodoContable}:${fila.cedula}:${fila.valorAbonado}:${fila.observaciones ?? ''}`
+      const resultadoAbono = await registrarAbono({
+        empresaId,
+        obligacionId,
+        valorAbonado: fila.valorAbonado,
+        referencia,
+        receptorPago: fila.receptorPago,
+        observaciones: fila.observaciones,
+        origen: 'excel',
+      })
+      if (resultadoAbono.ok && resultadoAbono.duplicado) {
+        resultado.abonosDuplicados += 1
+      } else if (resultadoAbono.ok) {
+        resultado.abonosRegistrados += 1
+      }
     }
 
     if (fila.alertaRiesgoUgpp) {

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
 import { BANCOS, type BancoConfig } from '@/lib/bancos/config'
+import { registrarAbono } from '@/lib/nomina/abonos'
 
 type MovimientoBanco = { fecha: string; descripcion: string; valor: number }
 type ResultadoCruce = {
@@ -398,7 +399,7 @@ export default function BancosPage() {
     const { data: nomina } = await supabase
       .from('nomina_programada').select('*')
       .eq('empresa_id', empresaActiva.id)   // ← fix: era user_id
-      .eq('estado', 'Pendiente de Pago')
+      .in('estado', ['Pendiente de Pago', 'Pago parcial'])
 
     const { data: periodosBancarios } = await supabase
       .from('periodos_conciliacion_bancaria')
@@ -492,9 +493,24 @@ export default function BancosPage() {
 
   const confirmarCruce = async (idx: number) => {
     const resultado = resultados[idx]
-    if (!resultado) return
+    if (!resultado || !empresaActiva?.id) return
     if (resultado.documentoEncontrado) await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', resultado.documentoEncontrado.id)
-    if (resultado.nominaEncontrada) await supabase.from('nomina_programada').update({ estado: 'Pagado' }).eq('id', resultado.nominaEncontrada.id)
+    if (resultado.nominaEncontrada) {
+      // Se registra como abono (no como "Pagado" directo): el valor del movimiento bancario
+      // puede ser un pago parcial. La referencia evita contar el mismo movimiento dos veces
+      // si el extracto se vuelve a cruzar.
+      const mov = resultado.movimiento
+      const referencia = `banco:${empresaActiva.id}:${mov.fecha}:${mov.descripcion}:${mov.valor}`
+      await registrarAbono({
+        empresaId: empresaActiva.id,
+        obligacionId: resultado.nominaEncontrada.id,
+        valorAbonado: mov.valor,
+        fechaAbono: mov.fecha,
+        referencia,
+        observaciones: mov.descripcion,
+        origen: 'banco',
+      })
+    }
     setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
   }
 
