@@ -304,7 +304,9 @@ function NominaContenido() {
                         </td>
                         <td className="px-4 py-3.5 max-w-[220px] truncate text-slate-500 text-xs" title={fila.observaciones ?? ''}>{fila.observaciones || '—'}</td>
                         <td className="px-4 py-3.5">
-                          {fila.archivoUrl?(
+                          {fila.soportesPdfUrl?(
+                            <a href={fila.soportesPdfUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm hover:bg-blue-50 whitespace-nowrap" title="PDF combinado con todos los soportes de los abonos de esta obligacion">📄 Ver soportes</a>
+                          ):fila.archivoUrl?(
                             <a href={fila.archivoUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm hover:bg-blue-50 whitespace-nowrap">📄 Ver</a>
                           ):(
                             <span className="text-slate-300 text-xs">—</span>
