@@ -1,144 +1,160 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { intentarMatchNomina } from '../matchSoporte'
+// lib/nomina/matchSoporte.ts
+// Version server-side (usa Service Role Key) de la logica de match que ya existia
+// en app/documentos/page.tsx (enrutarDocumentoIA), para poder llamarla desde
+// el webhook de WhatsApp, que no corre en el navegador.
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { DatosDocumentoIA } from '@/lib/documentos/clasificarDocumento'
 
-// Mock del cliente admin de Supabase: simula las tablas nomina_programada y
-// alias_terceros con datos controlados por cada test, para verificar la
-// logica de desambiguacion multi-sede sin tocar una base de datos real.
-const estadoMock = {
-  nomina: [] as Array<{
-    id: number
-    nombre_empleado: string
-    cedula: string
-    area: string
-    neto_pagar: number
-    valor_causado: number | null
-    saldo_anterior: number | null
-    periodo_contable: string
-  }>,
-  alias: [] as Array<{ cedula: string; alias: string }>,
+function normalizar(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({
-    from: (tabla: string) => {
-      if (tabla === 'nomina_programada') {
-        return {
-          select: () => ({
-            eq: () => ({
-              in: () => ({
-                order: () => Promise.resolve({ data: estadoMock.nomina, error: null }),
-              }),
-            }),
-          }),
-        }
-      }
-      if (tabla === 'alias_terceros') {
-        return {
-          select: () => ({
-            eq: () => Promise.resolve({ data: estadoMock.alias, error: null }),
-          }),
-        }
-      }
-      throw new Error(`Tabla no mockeada: ${tabla}`)
-    },
-  }),
-}))
+export type ResultadoMatchNomina =
+  | { match: true; empleadoId: string; nombreEmpleado: string; cedula: string }
+  | { match: false; razon: string }
 
-function datosDoc(proveedor: string, valorTotal: number): DatosDocumentoIA {
-  return {
-    proveedor,
-    nit_proveedor: '',
-    numero_documento: '',
-    fecha: '2026-05-10',
-    fecha_emision: '2026-05-10',
-    valor_base: valorTotal,
-    iva: 0,
-    valor: valorTotal,
-    valor_total: valorTotal,
-    descripcion: '',
-    tipo: 'nomina',
-    categoria: '',
-    tipo_documento: 'comprobante',
-    cuenta_puc: '',
-    alerta: '',
-    ya_pagado: false,
+export async function intentarMatchNomina(datos: DatosDocumentoIA, empresaId: string): Promise<ResultadoMatchNomina> {
+  const supabase = createAdminClient()
+
+  // No filtramos por el periodo que se calcula a partir de la fecha del comprobante:
+  // en esta empresa los cortes de nomina son el 30 de cada mes pero los pagos se hacen
+  // entre el 5 y el 15 del mes SIGUIENTE, es decir, casi nunca coinciden con el periodo
+  // que "deberia" corresponder segun la fecha del recibo. En vez de eso, buscamos entre
+  // TODAS las obligaciones pendientes/parciales del empleado (cualquier periodo) y
+  // aplicamos el abono a la mas antigua sin pagar (orden ascendente por periodo_contable).
+  const { data: empData } = await supabase
+    .from('nomina_programada')
+    .select('id, nombre_empleado, cedula, area, neto_pagar, valor_causado, saldo_anterior, periodo_contable')
+    .eq('empresa_id', empresaId)
+    .in('estado', ['Pendiente de Pago', 'Pago parcial'])
+    .order('periodo_contable', { ascending: true })
+
+  if (!empData || empData.length === 0) {
+    return { match: false, razon: 'No hay pagos de nomina pendientes.' }
+  }
+
+  const { data: aliasData } = await supabase
+    .from('alias_terceros')
+    .select('cedula, alias')
+    .eq('empresa_id', empresaId)
+
+  const aliasesMap: Record<string, string[]> = {}
+  for (const row of aliasData ?? []) {
+    if (!aliasesMap[row.cedula]) aliasesMap[row.cedula] = []
+    aliasesMap[row.cedula].push(row.alias)
+  }
+
+  const proveedorNorm = normalizar(datos.proveedor || '')
+  const valorDoc = datos.valor_total || datos.valor || 0
+
+  // 1. Coincidencia por Nombre/Alias. Se juntan TODAS las obligaciones pendientes que
+  // coincidan con este beneficiario (puede tener obligaciones en mas de una sede/area
+  // a la vez), en vez de tomar la primera.
+  const candidatas = empData.filter((emp) => {
+    const empNombreNorm = normalizar(emp.nombre_empleado)
+    const empAliases = aliasesMap[emp.cedula] || []
+
+    let coincideNombre = proveedorNorm.includes(empNombreNorm) || empNombreNorm.includes(proveedorNorm)
+    if (!coincideNombre) {
+      for (const alias of empAliases) {
+        const aliasNorm = normalizar(alias)
+        if (aliasNorm && (proveedorNorm.includes(aliasNorm) || aliasNorm.includes(proveedorNorm))) {
+          coincideNombre = true
+          break
+        }
+      }
+    }
+    return coincideNombre
+  })
+
+  if (candidatas.length > 0) {
+    const areasDistintas = new Set(candidatas.map((c) => c.area || ''))
+
+    if (areasDistintas.size <= 1) {
+      // Una sola sede: sin ambiguedad. candidatas ya viene ordenado por periodo_contable
+      // ascendente (hereda el orden de empData), asi que la primera es la mas antigua.
+      // El match por nombre/alias NO exige que el valor coincida: puede ser un abono
+      // parcial. La cedula/nombre es lo que define al beneficiario, no el monto.
+      const emp = candidatas[0]
+      return { match: true, empleadoId: emp.id, nombreEmpleado: emp.nombre_empleado, cedula: emp.cedula }
+    }
+
+    // La misma persona tiene obligaciones pendientes en MAS DE UNA sede a la vez
+    // (ej. Oliverio en Pontetresa y en Edificar): son deudas independientes que nunca
+    // se deben mezclar. Se intenta desambiguar por el valor exacto (+/- 10) SOLO entre
+    // las obligaciones de esta persona; si no hay un unico match, se deja pendiente de
+    // revision manual en vez de arriesgarse a aplicar el pago a la sede equivocada.
+    const coincidenValorPropio = candidatas.filter((e) => Math.abs(Number(e.neto_pagar) - Number(valorDoc)) <= 10)
+    if (coincidenValorPropio.length === 1) {
+      const emp = coincidenValorPropio[0]
+      return { match: true, empleadoId: emp.id, nombreEmpleado: emp.nombre_empleado, cedula: emp.cedula }
+    }
+
+    return {
+      match: false,
+      razon: `${candidatas[0].nombre_empleado} tiene pagos pendientes en mas de una sede (${[...areasDistintas].filter(Boolean).join(', ')}) y no se pudo determinar a cual corresponde este comprobante por el valor. Requiere asignacion manual.`,
+    }
+  }
+
+  // 2. Coincidencia por Valor Unico (+/- 10), solo cuando no hubo match por nombre.
+  // Tambien sin filtrar por periodo: si el valor exacto solo calza con UNA obligacion
+  // pendiente en cualquier periodo, se toma esa.
+  const coincidenValor = empData.filter((e) => Math.abs(Number(e.neto_pagar) - Number(valorDoc)) <= 10)
+  if (coincidenValor.length === 1) {
+    const emp = coincidenValor[0]
+    return { match: true, empleadoId: emp.id, nombreEmpleado: emp.nombre_empleado, cedula: emp.cedula }
+  }
+
+  if (coincidenValor.length > 1) {
+    return { match: false, razon: `Multiples empleados (${coincidenValor.map((e) => e.nombre_empleado).join(', ')}) con el mismo valor. Requiere revision manual.` }
+  }
+
+  return { match: false, razon: 'No se encontro coincidencia por nombre ni por valor.' }
+}
+
+export async function marcarNominaPagada(empleadoId: string, archivoUrl: string | null, referencia: string) {
+  const supabase = createAdminClient()
+  const { error } = await supabase
+    .from('nomina_programada')
+    .update({
+      estado: 'Pagado',
+      metodo_conciliacion: 'automatico_valor',
+      referencia_conciliacion: referencia,
+      archivo_url: archivoUrl || 'subido',
+    })
+    .eq('id', empleadoId)
+
+  if (error) throw new Error(error.message)
+}
+
+export async function guardarAliasTercero(nombreProveedor: string, cedulaEmpleado: string, empresaId: string, userId?: string) {
+  if (!nombreProveedor || !cedulaEmpleado || !empresaId) return
+  const aliasLimpio = nombreProveedor.trim()
+  if (aliasLimpio.length < 3) return
+
+  const supabase = createAdminClient()
+  const { data: existente } = await supabase
+    .from('alias_terceros')
+    .select('id')
+    .eq('empresa_id', empresaId)
+    .eq('cedula', cedulaEmpleado)
+    .eq('alias', aliasLimpio)
+    .maybeSingle()
+
+  if (!existente) {
+    await supabase.from('alias_terceros').insert({
+      user_id: userId ?? null,
+      empresa_id: empresaId,
+      cedula: cedulaEmpleado,
+      alias: aliasLimpio,
+      tercero_tipo: 'empleado',
+      tercero_nombre: aliasLimpio,
+    })
   }
 }
-
-beforeEach(() => {
-  estadoMock.nomina = []
-  estadoMock.alias = []
-})
-
-describe('intentarMatchNomina - obligaciones en una sola sede', () => {
-  it('toma la obligacion pendiente mas antigua cuando el empleado solo tiene una sede/area', async () => {
-    estadoMock.nomina = [
-      { id: 1, nombre_empleado: 'JUAN PEREZ', cedula: '111', area: 'EDIFICAR-DESCAN', neto_pagar: 500000, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-04' },
-      { id: 2, nombre_empleado: 'JUAN PEREZ', cedula: '111', area: 'EDIFICAR-DESCAN', neto_pagar: 500000, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-05' },
-    ]
-
-    // El valor del comprobante no coincide con ninguna obligacion (podria ser un abono
-    // parcial): el match por nombre no exige coincidencia de valor.
-    const resultado = await intentarMatchNomina(datosDoc('JUAN PEREZ', 200000), 'empresa-1')
-
-    expect(resultado.match).toBe(true)
-    if (resultado.match) {
-      expect(resultado.empleadoId).toBe(1) // la mas antigua (periodo_contable 2026-04)
-    }
-  })
-})
-
-describe('intentarMatchNomina - obligaciones en mas de una sede', () => {
-  it('desambigua por valor exacto cuando el valor solo calza con una de las sedes del empleado', async () => {
-    estadoMock.nomina = [
-      { id: 10, nombre_empleado: 'OLIVERIO TRUJILLO', cedula: '19314401', area: 'EDIFICAR-DESCAN', neto_pagar: 408400, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-04' },
-      { id: 20, nombre_empleado: 'OLIVERIO TRUJILLO', cedula: '19314401', area: 'PONTETRE-DESCAN', neto_pagar: 880000, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-05' },
-    ]
-
-    // Aunque la obligacion de EDIFICAR es mas antigua, el valor del comprobante
-    // (880.000) solo calza con la obligacion de PONTETRESA: debe ganar el valor,
-    // no la antiguedad, para no mezclar sedes.
-    const resultado = await intentarMatchNomina(datosDoc('OLIVERIO TRUJILLO', 880000), 'empresa-1')
-
-    expect(resultado.match).toBe(true)
-    if (resultado.match) {
-      expect(resultado.empleadoId).toBe(20)
-    }
-  })
-
-  it('devuelve match:false pidiendo asignacion manual cuando el valor no permite desambiguar la sede', async () => {
-    estadoMock.nomina = [
-      { id: 10, nombre_empleado: 'OLIVERIO TRUJILLO', cedula: '19314401', area: 'EDIFICAR-DESCAN', neto_pagar: 408400, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-04' },
-      { id: 20, nombre_empleado: 'OLIVERIO TRUJILLO', cedula: '19314401', area: 'PONTETRE-DESCAN', neto_pagar: 880000, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-05' },
-    ]
-
-    // El valor del comprobante no coincide exactamente con ninguna de las dos
-    // obligaciones: no hay forma segura de saber a que sede corresponde.
-    const resultado = await intentarMatchNomina(datosDoc('OLIVERIO TRUJILLO', 150000), 'empresa-1')
-
-    expect(resultado.match).toBe(false)
-    if (!resultado.match) {
-      expect(resultado.razon).toContain('mas de una sede')
-      expect(resultado.razon).toContain('EDIFICAR-DESCAN')
-      expect(resultado.razon).toContain('PONTETRE-DESCAN')
-      expect(resultado.razon).toContain('asignacion manual')
-    }
-  })
-})
-
-describe('intentarMatchNomina - sin coincidencia por nombre (regresion del match por valor)', () => {
-  it('cuando no hay match por nombre/alias, sigue funcionando el match por valor unico', async () => {
-    estadoMock.nomina = [
-      { id: 30, nombre_empleado: 'MARIA GOMEZ', cedula: '222', area: 'EDIFICAR-DESCAN', neto_pagar: 300000, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-05' },
-      { id: 31, nombre_empleado: 'PEDRO LOPEZ', cedula: '333', area: 'PONTETRE-DESCAN', neto_pagar: 700000, valor_causado: null, saldo_anterior: null, periodo_contable: '2026-05' },
-    ]
-
-    const resultado = await intentarMatchNomina(datosDoc('PROVEEDOR DESCONOCIDO SAS', 700000), 'empresa-1')
-
-    expect(resultado.match).toBe(true)
-    if (resultado.match) {
-      expect(resultado.empleadoId).toBe(31)
-    }
-  })
-})
