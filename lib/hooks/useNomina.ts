@@ -29,6 +29,7 @@ export type FilaNomina = {
   estado: EstadoPago
   metodoConciliacion: MetodoConciliacion
   archivoUrl: string | null
+  soportesPdfUrl: string | null
   // Flujo de "abonos parciales" (turnos/servicios). Si valorCausado es null, la fila
   // sigue el flujo tradicional de nomina de salario fijo (netoPagar de siempre).
   valorCausado: number | null
@@ -57,7 +58,7 @@ export function useNomina(periodoContable: string) {
 
     const { data, error: e } = await supabase
       .from('nomina_programada')
-      .select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion,archivo_url,valor_causado,saldo_anterior,observaciones')
+      .select('id,nombre_empleado,cedula,area,sueldo_base,cuenta_puc_basico,auxilio_transporte,cuenta_puc_transporte,bonificaciones,cuenta_puc_bonos,prima,cuenta_puc_prima,abono_prima,cesantias,abono_cesantias,abono_liquidacion,neto_pagar,exceso_ley_1393,alerta_riesgo_ugpp,estado,metodo_conciliacion,archivo_url,soportes_pdf_url,valor_causado,saldo_anterior,observaciones')
       .eq('empresa_id', empresaActiva.id)
       .eq('periodo_contable', periodoContable)
       .order('id')
@@ -113,6 +114,7 @@ export function useNomina(periodoContable: string) {
         estado: f.estado ?? 'Pendiente de Pago',
         metodoConciliacion: f.metodo_conciliacion ?? null,
         archivoUrl: f.archivo_url ?? null,
+        soportesPdfUrl: f.soportes_pdf_url ?? null,
         valorCausado,
         saldoAnterior,
         totalAbonado,

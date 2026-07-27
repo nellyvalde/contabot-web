@@ -3,6 +3,7 @@
 // y saldo pendiente. El saldo NUNCA se lee de una columna manual, se calcula.
 import { createAdminClient } from '@/lib/supabase/admin'
 import { supabase as supabaseNavegador } from '@/lib/supabase/client'
+import { regenerarSoportesPdf } from '@/lib/nomina/soportesPdf'
 
 export type EstadoAbono = 'Pendiente de Pago' | 'Pago parcial' | 'Pagado'
 
@@ -145,6 +146,10 @@ export async function registrarAbono(params: ParamsRegistrarAbono): Promise<Resu
     .eq('id', obligacionId)
 
   if (errUpdate) return { ok: false, error: errUpdate.message }
+
+  // Regenera el PDF combinado con todos los soportes de esta obligacion (no bloquea
+  // el registro del abono si falla: solo queda logueado).
+  await regenerarSoportesPdf(obligacionId, empresaId, admin)
 
   return { ok: true, duplicado: false, saldoPendiente, estado }
 }
