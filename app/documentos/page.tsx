@@ -1,9 +1,11 @@
 'use client'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useUser } from '@/lib/hooks/useUser'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabase/client'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
+import { detectarNovedades } from '@/lib/documentos/detectarNovedades'
 
 type TipoDocumento = 'factura_venta' | 'factura_compra' | 'soporte_nomina' | 'comprobante_egreso' | 'otro'
 type EstadoConciliacion = 'pendiente' | 'conciliado' | 'rechazado'
@@ -114,8 +116,11 @@ function DocumentosContenido() {
   const { user, handleLogout } = useUser()
   const { empresaActiva } = useEmpresa()
   const fileRef = useRef<HTMLInputElement>(null)
+  const searchParams = useSearchParams()
+  const esRevision = searchParams.get('vista') === 'revision'
 
   const [documentos, setDocumentos] = useState<Documento[]>([])
+  const [facturasBanco, setFacturasBanco] = useState<{ proveedor: string | null; fecha: string | null; valor: number | null; numero_factura: string | null }[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<EstadoConciliacion | 'todos'>('todos')
@@ -220,6 +225,7 @@ function DocumentosContenido() {
     if (empresaActiva?.id) {
       setDocumentos([])
       cargarDocumentos()
+      cargarFacturasBanco()
     }
   }, [empresaActiva?.id])
 
@@ -237,6 +243,19 @@ function DocumentosContenido() {
     else setDocumentos(data ?? [])
     setCargando(false)
   }
+
+  async function cargarFacturasBanco() {
+    if (!empresaActiva?.id) return
+    const { data } = await supabase
+      .from('facturas')
+      .select('proveedor, fecha, valor, numero_factura')
+      .eq('empresa_id', empresaActiva.id)
+    setFacturasBanco(data ?? [])
+  }
+
+  const documentosConNovedades = useMemo(() => {
+    return documentos.map(d => ({ ...d, novedades: detectarNovedades(d, documentos, facturasBanco) }))
+  }, [documentos, facturasBanco])
 
   async function handleArchivo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -673,11 +692,12 @@ const total = resultadosMultiples.length
   }
 
   const documentosPorTab = useMemo(() => {
+    if (esRevision) return documentosConNovedades.filter(d => d.novedades.length > 0)
     switch (tabActiva) {
-      case 'procesados': return documentos.filter(d => d.estado_conciliacion === 'conciliado')
-      default: return documentos.filter(d => d.estado_conciliacion === 'pendiente')
+      case 'procesados': return documentosConNovedades.filter(d => d.estado_conciliacion === 'conciliado')
+      default: return documentosConNovedades.filter(d => d.estado_conciliacion === 'pendiente')
     }
-  }, [documentos, tabActiva])
+  }, [documentosConNovedades, tabActiva, esRevision])
 
   const documentosFiltrados = useMemo(() => {
     if (filtroEstado === 'todos') return documentosPorTab
@@ -698,7 +718,7 @@ const total = resultadosMultiples.length
 
   if (!empresaActiva) return (
     <div className="flex min-h-screen bg-[#f8f9fb]">
-      <Sidebar user={user} onLogout={handleLogout} />
+      <Sidebar user={user} onLogout={handleLogout} vistaRevision={esRevision} />
       <main className="flex-1 ml-64 p-8 flex items-center justify-center">
         <p className="text-slate-400">Selecciona una empresa para continuar.</p>
       </main>
@@ -707,15 +727,15 @@ const total = resultadosMultiples.length
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fb]">
-      <Sidebar user={user} onLogout={handleLogout} />
+      <Sidebar user={user} onLogout={handleLogout} vistaRevision={esRevision} />
       <main className="flex-1 ml-64 p-8">
         <div className="max-w-7xl mx-auto space-y-6">
 
           <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest mb-1">Buzón IA</p>
-                <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Documentos soporte</h1>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest mb-1">{esRevision ? 'Revisión IA' : 'Buzón IA'}</p>
+                <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">{esRevision ? 'Documentos con novedades' : 'Documentos soporte'}</h1>
                 <p className="text-xs text-slate-400 mt-1">{empresaActiva.razon_social} — NIT {empresaActiva.nit}</p>
               </div>
               <div className="flex gap-3">
@@ -737,6 +757,7 @@ const total = resultadosMultiples.length
             {mensajeExito && <p className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">{mensajeExito}</p>}
           </div>
 
+          {!esRevision && (
           <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
             <h2 className="text-base font-semibold text-slate-900 mb-4">🤖 Escanear documento con IA</h2>
             {!escaneando && !datosIA && resultadosMultiples.length === 0 && (
@@ -834,39 +855,58 @@ const total = resultadosMultiples.length
               </div>
             )}
           </div>
+          )}
 
-          <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+          <div className={esRevision ? 'grid gap-6' : 'grid gap-6 xl:grid-cols-[1.3fr_0.7fr]'}>
             <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <div className="flex gap-2">
-                  {[{ id: 'pendientes', label: '📥 Por Procesar' }, { id: 'procesados', label: '✅ Procesados' }].map(tab => (
-                    <button key={tab.id} onClick={() => setTabActiva(tab.id as any)}
-                      className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tabActiva === tab.id ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value as any)}
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                  <option value="todos">Todos</option>
-                  <option value="pendiente">Pendientes</option>
-                  <option value="conciliado">Conciliados</option>
-                  <option value="rechazado">Rechazados</option>
-                </select>
+                {esRevision ? (
+                  <p className="text-sm font-semibold text-slate-700">🔎 {documentosPorTab.length} documento(s) con novedades</p>
+                ) : (
+                  <div className="flex gap-2">
+                    {[{ id: 'pendientes', label: '📥 Por Procesar' }, { id: 'procesados', label: '✅ Procesados' }].map(tab => (
+                      <button key={tab.id} onClick={() => setTabActiva(tab.id as any)}
+                        className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tabActiva === tab.id ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!esRevision && (
+                  <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value as any)}
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <option value="todos">Todos</option>
+                    <option value="pendiente">Pendientes</option>
+                    <option value="conciliado">Conciliados</option>
+                    <option value="rechazado">Rechazados</option>
+                  </select>
+                )}
               </div>
               {cargando ? (
                 <div className="flex items-center gap-2 p-8 text-slate-400 text-sm"><span className="animate-spin w-4 h-4 border-2 border-slate-300 border-t-slate-500 rounded-full" />Cargando...</div>
               ) : documentosFiltrados.length === 0 ? (
                 <div className="p-8 text-center">
-                  <p className="text-slate-500 font-medium">Sin documentos para {empresaActiva.razon_social}</p>
-                  <p className="text-slate-400 text-sm mt-1">Sube un archivo o registra uno manualmente.</p>
+                  {esRevision ? (
+                    <>
+                      <p className="text-slate-500 font-medium">✅ Sin novedades pendientes</p>
+                      <p className="text-slate-400 text-sm mt-1">Todos los documentos de {empresaActiva.razon_social} están completos.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-500 font-medium">Sin documentos para {empresaActiva.razon_social}</p>
+                      <p className="text-slate-400 text-sm mt-1">Sube un archivo o registra uno manualmente.</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-100">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
-                        {['Tipo','Nº Documento','Proveedor/Cliente','Valor','Cuenta PUC','Estado','PDF','Acción'].map(h => (
+                        {(esRevision
+                          ? ['Tipo','Nº Documento','Proveedor/Cliente','Valor','Estado','Novedades','PDF','Acción']
+                          : ['Tipo','Nº Documento','Proveedor/Cliente','Valor','Cuenta PUC','Estado','PDF','Acción']
+                        ).map(h => (
                           <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">{h}</th>
                         ))}
                       </tr>
@@ -878,13 +918,22 @@ const total = resultadosMultiples.length
                           <td className="px-4 py-3.5 text-slate-600">{doc.numero_documento ?? '—'}</td>
                           <td className="px-4 py-3.5 text-slate-600">{doc.proveedor_cliente ?? '—'}</td>
                           <td className="px-4 py-3.5 font-semibold text-slate-900">${Number(doc.valor ?? 0).toLocaleString()}</td>
-                          <td className="px-4 py-3.5 text-slate-500 font-mono text-xs">{doc.cuenta_puc ?? '—'}</td>
+                          {!esRevision && <td className="px-4 py-3.5 text-slate-500 font-mono text-xs">{doc.cuenta_puc ?? '—'}</td>}
                           <td className="px-4 py-3.5">
                             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${doc.estado_conciliacion === 'conciliado' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : doc.estado_conciliacion === 'rechazado' ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${doc.estado_conciliacion === 'conciliado' ? 'bg-emerald-500' : doc.estado_conciliacion === 'rechazado' ? 'bg-red-500' : 'bg-amber-400'}`}/>
                               {doc.estado_conciliacion}
                             </span>
                           </td>
+                          {esRevision && (
+                            <td className="px-4 py-3.5">
+                              <div className="flex flex-wrap gap-1">
+                                {(doc as any).novedades?.map((n: string) => (
+                                  <span key={n} className="inline-flex items-center rounded-full bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 px-2 py-0.5 text-[11px] font-medium">{n}</span>
+                                ))}
+                              </div>
+                            </td>
+                          )}
                           <td className="px-4 py-3.5">
                             {doc.archivo_url ? (
                               <a href={doc.archivo_url} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 shadow-sm hover:bg-blue-50">📄 Ver</a>
@@ -904,6 +953,7 @@ const total = resultadosMultiples.length
               )}
             </div>
 
+            {!esRevision && (
             <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
               <h2 className="text-base font-semibold text-slate-900 mb-4">Registrar manualmente</h2>
               <div className="space-y-3">
@@ -924,6 +974,7 @@ const total = resultadosMultiples.length
                 <button onClick={registrarDocumento} className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">+ Registrar documento</button>
               </div>
             </div>
+            )}
           </div>
 
         </div>

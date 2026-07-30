@@ -52,14 +52,15 @@ type SidebarProps = {
   user: any
   onLogout: () => void
   alertCount?: number
+  vistaRevision?: boolean
 }
 
-export default function Sidebar({ user, onLogout, alertCount = 0 }: SidebarProps) {
+export default function Sidebar({ user, onLogout, alertCount = 0, vistaRevision = false }: SidebarProps) {
   const pathname = usePathname()
 
   const activeId = (() => {
     if (pathname === '/nomina') return 'nomina'
-    if (pathname === '/documentos') return 'documentos'
+    if (pathname === '/documentos') return vistaRevision ? 'revision' : 'documentos'
     if (pathname === '/bancos') return 'bancos'
     if (pathname === '/cobrar') return 'cobrar'
     if (pathname === '/pagar') return 'pagar'
