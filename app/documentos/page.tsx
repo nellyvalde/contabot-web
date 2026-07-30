@@ -120,7 +120,7 @@ function DocumentosContenido() {
   const esRevision = searchParams.get('vista') === 'revision'
 
   const [documentos, setDocumentos] = useState<Documento[]>([])
-  const [facturasBanco, setFacturasBanco] = useState<{ proveedor: string | null; fecha: string | null; valor: number | null }[]>([])
+  const [facturasBanco, setFacturasBanco] = useState<{ proveedor: string | null; fecha: string | null; valor: number | null; numero_factura: string | null }[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<EstadoConciliacion | 'todos'>('todos')
@@ -248,7 +248,7 @@ function DocumentosContenido() {
     if (!empresaActiva?.id) return
     const { data } = await supabase
       .from('facturas')
-      .select('proveedor, fecha, valor')
+      .select('proveedor, fecha, valor, numero_factura')
       .eq('empresa_id', empresaActiva.id)
     setFacturasBanco(data ?? [])
   }
@@ -718,7 +718,7 @@ const total = resultadosMultiples.length
 
   if (!empresaActiva) return (
     <div className="flex min-h-screen bg-[#f8f9fb]">
-      <Sidebar user={user} onLogout={handleLogout} />
+      <Sidebar user={user} onLogout={handleLogout} vistaRevision={esRevision} />
       <main className="flex-1 ml-64 p-8 flex items-center justify-center">
         <p className="text-slate-400">Selecciona una empresa para continuar.</p>
       </main>
@@ -727,7 +727,7 @@ const total = resultadosMultiples.length
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fb]">
-      <Sidebar user={user} onLogout={handleLogout} />
+      <Sidebar user={user} onLogout={handleLogout} vistaRevision={esRevision} />
       <main className="flex-1 ml-64 p-8">
         <div className="max-w-7xl mx-auto space-y-6">
 

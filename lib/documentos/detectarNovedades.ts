@@ -12,9 +12,10 @@ type FacturaBanco = {
   proveedor: string | null
   fecha: string | null
   valor: number | null
+  numero_factura: string | null
 }
 
-const REGEX_PUC = /^\d{6}$/
+const REGEX_PUC = /^\d{6}/
 
 function normalizarTexto(texto: string): string {
   return texto
@@ -39,7 +40,15 @@ export function detectarNovedades(
     novedades.push('Cuenta PUC dudosa')
   }
 
-  if (doc.proveedor_cliente && doc.valor && doc.fecha_emision) {
+  if (doc.numero_documento) {
+    const numeroNorm = normalizarTexto(doc.numero_documento)
+    const posibleDuplicado = todosLosDocumentos.some(otro =>
+      otro.id !== doc.id &&
+      otro.numero_documento &&
+      normalizarTexto(otro.numero_documento) === numeroNorm
+    )
+    if (posibleDuplicado) novedades.push('Posible duplicado')
+  } else if (doc.proveedor_cliente && doc.valor && doc.fecha_emision) {
     const proveedorNorm = normalizarTexto(doc.proveedor_cliente)
     const posibleDuplicado = todosLosDocumentos.some(otro =>
       otro.id !== doc.id &&
@@ -55,12 +64,10 @@ export function detectarNovedades(
     novedades.push('Falta de soporte')
   }
 
-  if (doc.proveedor_cliente && doc.valor && doc.fecha_emision && facturasBanco.length > 0) {
-    const proveedorNorm = normalizarTexto(doc.proveedor_cliente)
+  if (doc.numero_documento && doc.valor && facturasBanco.length > 0) {
+    const numeroNorm = normalizarTexto(doc.numero_documento)
     const coincidenciaBanco = facturasBanco.find(f =>
-      f.proveedor &&
-      normalizarTexto(f.proveedor) === proveedorNorm &&
-      f.fecha === doc.fecha_emision
+      f.numero_factura && normalizarTexto(f.numero_factura) === numeroNorm
     )
     if (coincidenciaBanco && Number(coincidenciaBanco.valor) !== Number(doc.valor)) {
       novedades.push('Diferencia con el banco')
