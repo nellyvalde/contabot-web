@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import { supabase } from '@/lib/supabase/client'
+import { crearEmpresaYVincular } from '@/lib/empresas/agregarEmpresa'
 
 function getIniciales(nombre: string): string {
   return nombre.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
@@ -33,20 +34,10 @@ export default function SelectorEmpresa() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.user?.id) { setErrorModal('No hay sesión activa.'); setGuardando(false); return }
 
-    const { data: empresa, error: e1 } = await supabase
-      .from('contabot_empresas')
-      .insert({ nit: nitNuevo.trim(), razon_social: razonNueva.trim(), aplica_exoneracion_parafiscales: false })
-      .select('id, nit, razon_social')
-      .single()
+    const resultado = await crearEmpresaYVincular(supabase, { nit: nitNuevo, razonSocial: razonNueva })
+    if (!resultado.ok) { setErrorModal(`Error: ${resultado.error}`); setGuardando(false); return }
 
-    if (e1 || !empresa) { setErrorModal(`Error: ${e1?.message}`); setGuardando(false); return }
-
-    const { error: e2 } = await supabase
-      .from('usuarios_empresas')
-      .insert({ user_id: session.user.id, empresa_id: empresa.id, rol: 'admin' })
-
-    if (e2) { setErrorModal(`Error vinculando: ${e2.message}`); setGuardando(false); return }
-
+    const { empresa } = resultado
     setEmpresaActiva({ id: empresa.id, nit: empresa.nit, razon_social: empresa.razon_social })
     setModalAbierto(false)
     setNitNuevo('')
