@@ -7,6 +7,14 @@ import Sidebar from '@/components/Sidebar'
 import { BANCOS, type BancoConfig } from '@/lib/bancos/config'
 import { registrarAbono } from '@/lib/nomina/abonos'
 import { confirmarCruceFactura } from '@/lib/bancos/confirmarCruceFactura'
+import {
+  filtrarFacturasValidas,
+  excluirFacturasReclamadas,
+  emparejarLote,
+  interpretarErrorInsercion,
+  type FacturaCruda,
+  type CandidatoAmbiguo,
+} from '@/lib/bancos/emparejarMovimientos'
 
 type MovimientoBanco = { fecha: string; descripcion: string; valor: number }
 type ResultadoCruce = {
@@ -14,7 +22,8 @@ type ResultadoCruce = {
   movimiento: MovimientoBanco
   documentoEncontrado: any | null
   nominaEncontrada: any | null
-  estadoCruce: 'encontrado' | 'no_encontrado' | 'confirmado' | 'extemporaneo_pendiente'
+  estadoCruce: 'encontrado' | 'no_encontrado' | 'confirmado' | 'extemporaneo_pendiente' | 'requiere_revision'
+  candidatosAmbiguos?: CandidatoAmbiguo[]
   periodoDestino?: string
   fechaRealOrigen?: string | null
 }
@@ -35,11 +44,6 @@ function parsearFecha(texto: string, formato: string): string {
   if (formato === 'DD/MM/YYYY') { const [d, m, y] = t.split('/'); return `${y}-${m}-${d}` }
   if (formato === 'MM/DD/YYYY') { const [m, d, y] = t.split('/'); return `${y}-${m}-${d}` }
   return t
-}
-
-function diferenciaDias(fecha1: string, fecha2: string): number {
-  const d1 = new Date(fecha1), d2 = new Date(fecha2)
-  return Math.abs((d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 export const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -222,6 +226,7 @@ export default function BancosPage() {
       documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
       nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
       estadoCruce: r.estado,
+      candidatosAmbiguos: r.candidatos_ambiguos ?? [],
     }))
 
     setResultados(resultadosPrevios)
@@ -394,15 +399,26 @@ export default function BancosPage() {
   const cruzarConDocumentos = async (movs: MovimientoBanco[]) => {
     if (!empresaActiva?.id) return
 
-    const { data: documentos } = await supabase
+    const { data: facturasCrudas } = await supabase
       .from('facturas').select('*')
       .eq('empresa_id', empresaActiva.id)   // ← fix: era user_id
-      .eq('estado', 'Pendiente')
+      .in('estado', ['Pendiente', 'Vencido'])
 
     const { data: nomina } = await supabase
       .from('nomina_programada').select('*')
       .eq('empresa_id', empresaActiva.id)   // ← fix: era user_id
       .in('estado', ['Pendiente de Pago', 'Pago parcial'])
+
+    // Facturas ya reclamadas por una conciliacion activa en CUALQUIER
+    // periodo -- sin esto, una factura emparejada pero no confirmada
+    // todavia podria volver a emparejarse en otro periodo o en una
+    // recarga del mismo extracto.
+    const { data: conciliacionesActivas } = await supabase
+      .from('conciliaciones_bancarias')
+      .select('documento_id')
+      .eq('empresa_id', empresaActiva.id)
+      .not('documento_id', 'is', null)
+      .in('estado', ['encontrado', 'confirmado'])
 
     const { data: periodosBancarios } = await supabase
       .from('periodos_conciliacion_bancaria')
@@ -414,19 +430,52 @@ export default function BancosPage() {
     )
     const periodoAbierto = await obtenerPeriodoAbierto(empresaActiva.id)
 
-    const resultadosCruce: ResultadoCruce[] = movs.map(mov => {
+    const idsReclamados = new Set((conciliacionesActivas || []).map((c: any) => c.documento_id as string))
+    const candidatasValidas = filtrarFacturasValidas((facturasCrudas || []) as FacturaCruda[])
+    const candidatasDisponibles = excluirFacturasReclamadas(candidatasValidas, idsReclamados)
+
+    // Solo los movimientos de periodos abiertos participan del emparejamiento
+    // -- uno de periodo cerrado nunca debe consumir una factura del pool
+    // (por eso se filtran ANTES de llamar a emparejarLote, no despues).
+    const indicesActivos: number[] = []
+    movs.forEach((mov, idx) => { if (!periodosCerrados.has(construirPeriodo(mov.fecha))) indicesActivos.push(idx) })
+    const resultadosMatchActivos = emparejarLote(
+      indicesActivos.map(idx => ({ fecha: movs[idx].fecha, valor: movs[idx].valor })),
+      candidatasDisponibles
+    )
+    const resultadosMatchPorIndice = new Map(indicesActivos.map((idx, i) => [idx, resultadosMatchActivos[i]]))
+
+    const resultadosCruce: ResultadoCruce[] = movs.map((mov, idx) => {
       const periodoMovimiento = construirPeriodo(mov.fecha)
       const esPeriodoCerrado = periodosCerrados.has(periodoMovimiento)
       const periodoDestino = esPeriodoCerrado ? periodoAbierto : periodoMovimiento
-      const docEncontrado = esPeriodoCerrado ? null : (documentos || []).find(doc =>
-        Math.abs((doc.valor || 0) - mov.valor) < 1000 && doc.fecha && diferenciaDias(doc.fecha, mov.fecha) <= 5
-      ) || null
-      const nominaEncontrada = esPeriodoCerrado ? null : !docEncontrado
+      const matchFactura = resultadosMatchPorIndice.get(idx)
+
+      const docEncontrado = !esPeriodoCerrado && matchFactura?.tipo === 'encontrado'
+        ? (facturasCrudas || []).find((f: any) => f.id === matchFactura.factura.id) || null
+        : null
+
+      // Nomina solo se intenta si la factura no quedo asignada de forma
+      // definitiva (ni encontrado) -- misma prioridad que antes, ahora
+      // tambien cubre el caso de ambiguedad: si nomina resuelve el
+      // movimiento, se prefiere sobre dejarlo en requiere_revision.
+      const nominaEncontrada = !esPeriodoCerrado && !docEncontrado
         ? (nomina || []).find(n => Math.abs((n.neto_pagar || 0) - mov.valor) < 1000) || null
         : null
-      const estadoCruce = esPeriodoCerrado
-        ? 'extemporaneo_pendiente'
-        : (docEncontrado || nominaEncontrada) ? 'encontrado' : 'no_encontrado'
+
+      let estadoCruce: ResultadoCruce['estadoCruce']
+      let candidatosAmbiguos: CandidatoAmbiguo[] = []
+
+      if (esPeriodoCerrado) {
+        estadoCruce = 'extemporaneo_pendiente'
+      } else if (docEncontrado || nominaEncontrada) {
+        estadoCruce = 'encontrado'
+      } else if (matchFactura?.tipo === 'requiere_revision') {
+        estadoCruce = 'requiere_revision'
+        candidatosAmbiguos = matchFactura.candidatos
+      } else {
+        estadoCruce = 'no_encontrado'
+      }
 
       return {
         id: crypto.randomUUID(),
@@ -434,6 +483,7 @@ export default function BancosPage() {
         documentoEncontrado: docEncontrado,
         nominaEncontrada: nominaEncontrada,
         estadoCruce,
+        candidatosAmbiguos,
         periodoDestino,
         fechaRealOrigen: esPeriodoCerrado ? mov.fecha : null,
       }
@@ -470,9 +520,12 @@ export default function BancosPage() {
         fecha_real_origen: r.fechaRealOrigen || null,
         movimiento_descripcion: r.movimiento.descripcion,
         movimiento_valor: r.movimiento.valor,
-        documento_id: r.estadoCruce === 'extemporaneo_pendiente' ? null : r.documentoEncontrado?.id || null,
+        documento_id: (r.estadoCruce === 'extemporaneo_pendiente' || r.estadoCruce === 'requiere_revision')
+          ? null
+          : r.documentoEncontrado?.id || null,
         nomina_id: r.estadoCruce === 'extemporaneo_pendiente' ? null : r.nominaEncontrada?.id || null,
         estado: r.estadoCruce,
+        candidatos_ambiguos: r.candidatosAmbiguos ?? [],
       }))
     )
 
@@ -481,8 +534,12 @@ export default function BancosPage() {
       // no quedaron guardadas en conciliaciones_bancarias -- el boton
       // "Confirmar cruce" llamaria a la RPC con un id que no existe en la
       // base de datos. resultados permanece en su estado previo (vacio, lo
-      // deja handleArchivo antes de llamar a esta funcion).
-      setMensaje('Error guardando la conciliación: ' + errorInsert.message)
+      // deja handleArchivo antes de llamar a esta funcion). Codigo 23505 =
+      // el indice unico conciliaciones_documento_activo_unico detecto que
+      // otra sesion ya reclamo una de estas facturas mientras se calculaba
+      // este cruce -- error real de concurrencia, no un bug.
+      console.error('[Bancos] Error guardando la conciliación:', errorInsert.code, errorInsert.message)
+      setMensaje(interpretarErrorInsercion(errorInsert))
       return
     }
 
@@ -602,6 +659,7 @@ export default function BancosPage() {
               <div className="flex flex-wrap gap-2">
                 <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">✅ Encontrados: {resultados.filter(r => r.estadoCruce === 'encontrado').length}</span>
                 <span className="px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">❓ Sin coincidencia: {resultados.filter(r => r.estadoCruce === 'no_encontrado').length}</span>
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">⚠️ Requiere revisión: {resultados.filter(r => r.estadoCruce === 'requiere_revision').length}</span>
                 <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">✔️ Confirmados: {resultados.filter(r => r.estadoCruce === 'confirmado').length}</span>
                 {periodoSeleccionado && (
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${periodoCerrado ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
@@ -633,7 +691,7 @@ export default function BancosPage() {
                 </thead>
                 <tbody>
                   {resultados.map((r, idx) => (
-                    <tr key={idx} className={`border-t ${r.estadoCruce === 'confirmado' ? 'bg-emerald-50' : r.estadoCruce === 'encontrado' ? 'bg-yellow-50' : ''}`}>
+                    <tr key={idx} className={`border-t ${r.estadoCruce === 'confirmado' ? 'bg-emerald-50' : r.estadoCruce === 'encontrado' ? 'bg-yellow-50' : r.estadoCruce === 'requiere_revision' ? 'bg-orange-50' : ''}`}>
                       <td className="px-4 py-3 text-slate-600">{r.movimiento.fecha}</td>
                       <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{r.movimiento.descripcion}</td>
                       <td className="px-4 py-3 font-medium text-slate-900">${Math.round(r.movimiento.valor).toLocaleString()}</td>
@@ -647,6 +705,7 @@ export default function BancosPage() {
                         {r.estadoCruce === 'encontrado' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Por confirmar</span>}
                         {r.estadoCruce === 'extemporaneo_pendiente' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Extemporáneo</span>}
                         {r.estadoCruce === 'no_encontrado' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Sin match</span>}
+                        {r.estadoCruce === 'requiere_revision' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">Coincidencia ambigua — requiere revisión</span>}
                       </td>
                       <td className="px-4 py-3">
                         {r.estadoCruce === 'encontrado' && <button onClick={() => confirmarCruce(idx)} className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-medium">Confirmar cruce</button>}
