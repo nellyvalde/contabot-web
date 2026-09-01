@@ -6,9 +6,11 @@ import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
 import { BANCOS, type BancoConfig } from '@/lib/bancos/config'
 import { registrarAbono } from '@/lib/nomina/abonos'
+import { confirmarCruceFactura } from '@/lib/bancos/confirmarCruceFactura'
 
 type MovimientoBanco = { fecha: string; descripcion: string; valor: number }
 type ResultadoCruce = {
+  id?: string
   movimiento: MovimientoBanco
   documentoEncontrado: any | null
   nominaEncontrada: any | null
@@ -215,6 +217,7 @@ export default function BancosPage() {
     if (periodoConsultaRef.current !== periodo) return
 
     const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
+      id: r.id,
       movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
       documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
       nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
@@ -426,6 +429,7 @@ export default function BancosPage() {
         : (docEncontrado || nominaEncontrada) ? 'encontrado' : 'no_encontrado'
 
       return {
+        id: crypto.randomUUID(),
         movimiento: mov,
         documentoEncontrado: docEncontrado,
         nominaEncontrada: nominaEncontrada,
@@ -438,16 +442,26 @@ export default function BancosPage() {
     // Borrar únicamente conciliaciones NO confirmadas de los periodos que vamos a reemplazar
     const periodosAReemplazar = Array.from(new Set(resultadosCruce.map(r => r.periodoDestino ?? construirPeriodo(r.movimiento.fecha))))
     if (periodosAReemplazar.length > 0) {
-      await supabase.from('conciliaciones_bancarias').delete()
+      const { error: errorDelete } = await supabase.from('conciliaciones_bancarias').delete()
         .eq('empresa_id', empresaActiva.id)
         .in('periodo', periodosAReemplazar)
         .neq('estado', 'confirmado')
+
+      if (errorDelete) {
+        // No continuar al INSERT sin saber si las conciliaciones previas
+        // realmente se borraron -- insertar de todas formas arriesgaria
+        // filas duplicadas o inconsistentes para el mismo periodo.
+        console.error('[Bancos] Error eliminando conciliaciones previas:', errorDelete.message)
+        setMensaje('Error eliminando conciliaciones previas: ' + errorDelete.message)
+        return
+      }
     }
 
     const currentUser = user ?? (await supabase.auth.getUser()).data.user
 
-    await supabase.from('conciliaciones_bancarias').insert(
+    const { error: errorInsert } = await supabase.from('conciliaciones_bancarias').insert(
       resultadosCruce.map(r => ({
+        id: r.id,
         user_id: currentUser?.id || null,
         empresa_id: empresaActiva.id,
         banco: bancoSeleccionado,
@@ -461,6 +475,16 @@ export default function BancosPage() {
         estado: r.estadoCruce,
       }))
     )
+
+    if (errorInsert) {
+      // No dejar en React filas "encontrado" (confirmables) que en realidad
+      // no quedaron guardadas en conciliaciones_bancarias -- el boton
+      // "Confirmar cruce" llamaria a la RPC con un id que no existe en la
+      // base de datos. resultados permanece en su estado previo (vacio, lo
+      // deja handleArchivo antes de llamar a esta funcion).
+      setMensaje('Error guardando la conciliación: ' + errorInsert.message)
+      return
+    }
 
     setResultados(resultadosCruce)
     setMensaje(`Cruce completado: ${resultadosCruce.filter(r => r.estadoCruce === 'encontrado').length} de ${movs.length} coinciden.`)
@@ -494,7 +518,17 @@ export default function BancosPage() {
   const confirmarCruce = async (idx: number) => {
     const resultado = resultados[idx]
     if (!resultado || !empresaActiva?.id) return
-    if (resultado.documentoEncontrado) await supabase.from('facturas').update({ estado: 'Pagado' }).eq('id', resultado.documentoEncontrado.id)
+
+    if (resultado.documentoEncontrado) {
+      const resultadoRpc = await confirmarCruceFactura(supabase, resultado.id)
+      if (!resultadoRpc.ok) {
+        setMensaje('Error confirmando el cruce: ' + resultadoRpc.error)
+        return
+      }
+      setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
+      return
+    }
+
     if (resultado.nominaEncontrada) {
       // Se registra como abono (no como "Pagado" directo): el valor del movimiento bancario
       // puede ser un pago parcial. La referencia evita contar el mismo movimiento dos veces
@@ -510,8 +544,8 @@ export default function BancosPage() {
         observaciones: mov.descripcion,
         origen: 'banco',
       })
+      setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
     }
-    setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
   }
 
   if (!user) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>
