@@ -5,12 +5,19 @@ import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
 import { obtenerMovimientosPorPeriodoContable, formatearPeriodo, type MovimientoConciliadoContable } from '@/app/bancos/page'
+import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
+import { claveConsulta, ejecutarSiVigente, type EstadoConsultaVigente } from '@/lib/bancos/consultaVigente'
 
 async function obtenerPeriodosContablesDisponibles(empresaId: string): Promise<string[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('conciliaciones_bancarias')
     .select('periodo_contable')
     .eq('empresa_id', empresaId)
+
+  if (error) {
+    registrarErrorSupabase('cargar los periodos contables disponibles', error)
+    throw new Error(mensajeErrorControlado('cargar los periodos contables disponibles'))
+  }
 
   return Array.from(new Set((data || []).map((item: any) => item.periodo_contable).filter(Boolean)))
     .sort((a: string, b: string) => b.localeCompare(a))
@@ -23,10 +30,40 @@ export default function ReporteContablePage() {
   const [periodoContable, setPeriodoContable] = useState<string>('')
   const [movimientos, setMovimientos] = useState<MovimientoConciliadoContable[]>([])
   const [cargando, setCargando] = useState(false)
-  const periodoConsultaRef = useRef<string>('')
+  const [mensaje, setMensaje] = useState('')
+
+  // Ajuste durante el render (no en un useEffect) al cambiar de empresa --
+  // mismo patron y misma razon que en app/bancos/page.tsx: evita el pase de
+  // render extra de un efecto y react-hooks/set-state-in-effect, con el
+  // mismo objetivo de seguridad (nunca mostrar datos de otra empresa).
+  const [empresaReflejada, setEmpresaReflejada] = useState(empresaActiva?.id)
+  if (empresaActiva?.id !== empresaReflejada) {
+    setEmpresaReflejada(empresaActiva?.id)
+    setPeriodos([])
+    setPeriodoContable('')
+    setMovimientos([])
+    setMensaje('')
+  }
+
+  const consultaPeriodosRef = useRef<string>('')
+  const estadoConsultaPeriodos: EstadoConsultaVigente = {
+    obtenerClaveVigente: () => consultaPeriodosRef.current,
+    establecerClaveVigente: (c) => { consultaPeriodosRef.current = c },
+  }
+
+  const consultaMovimientosRef = useRef<string>('')
+  const estadoConsultaMovimientos: EstadoConsultaVigente = {
+    obtenerClaveVigente: () => consultaMovimientosRef.current,
+    establecerClaveVigente: (c) => { consultaMovimientosRef.current = c },
+  }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error) {
+        registrarErrorSupabase('verificar la sesión', error)
+        window.location.href = '/'
+        return
+      }
       if (!data.user) window.location.href = '/'
       else setUser(data.user)
     })
@@ -34,29 +71,78 @@ export default function ReporteContablePage() {
 
   useEffect(() => {
     if (!empresaActiva?.id) return
-    cargarPeriodosContables()
+    cargarPeriodosContables(empresaActiva.id)
   }, [empresaActiva?.id])
 
   useEffect(() => {
     if (!empresaActiva?.id || !periodoContable) return
-    cargarMovimientos(periodoContable)
+    cargarMovimientos(empresaActiva.id, periodoContable)
   }, [empresaActiva?.id, periodoContable])
 
-  const cargarPeriodosContables = async () => {
-    if (!empresaActiva?.id) return
-    const periodosDisponibles = await obtenerPeriodosContablesDisponibles(empresaActiva.id)
-    setPeriodos(periodosDisponibles)
-    setPeriodoContable(periodosDisponibles[0] || '')
+  const cargarPeriodosContables = async (empresaId: string) => {
+    if (!empresaId) return
+    const clave = claveConsulta(empresaId)
+
+    await ejecutarSiVigente(
+      estadoConsultaPeriodos,
+      clave,
+      async () => {
+        try {
+          const periodosDisponibles = await obtenerPeriodosContablesDisponibles(empresaId)
+          return { tipo: 'ok' as const, periodosDisponibles }
+        } catch (err) {
+          console.error('[ReporteContable] Error cargando periodos contables:', err)
+          return { tipo: 'error' as const }
+        }
+      },
+      (resultado) => {
+        if (resultado.tipo === 'error') {
+          setMensaje(mensajeErrorControlado('cargar los periodos disponibles'))
+          return
+        }
+        setPeriodos(resultado.periodosDisponibles)
+        setPeriodoContable(resultado.periodosDisponibles[0] || '')
+      }
+    )
   }
 
-  const cargarMovimientos = async (periodo: string) => {
-    if (!empresaActiva?.id || !periodo) return
-    periodoConsultaRef.current = periodo
+  const cargarMovimientos = async (empresaId: string, periodo: string) => {
+    if (!empresaId || !periodo) return
+    const clave = claveConsulta(empresaId, periodo)
     setCargando(true)
-    const data = await obtenerMovimientosPorPeriodoContable(empresaActiva.id, periodo)
-    if (periodoConsultaRef.current !== periodo) return
-    setMovimientos(data)
-    setCargando(false)
+
+    await ejecutarSiVigente(
+      estadoConsultaMovimientos,
+      clave,
+      async () => {
+        try {
+          const data = await obtenerMovimientosPorPeriodoContable(empresaId, periodo)
+          return { tipo: 'ok' as const, data }
+        } catch (err) {
+          console.error('[ReporteContable] Error cargando movimientos:', err)
+          return { tipo: 'error' as const }
+        }
+      },
+      (resultado) => {
+        // setCargando(false) vive DENTRO de este callback (que solo corre si
+        // `clave` sigue vigente) para que una respuesta tardia de otro
+        // periodo/empresa nunca apague el indicador de carga de la consulta
+        // realmente activa.
+        if (resultado.tipo === 'error') {
+          // Un fallo de consulta NUNCA se presenta como "cero movimientos":
+          // se limpia la lista pero se deja un mensaje de error explicito,
+          // y la tabla evita mostrar "No hay movimientos" mientras `mensaje`
+          // este activo (ver JSX mas abajo).
+          setMovimientos([])
+          setMensaje(mensajeErrorControlado('cargar el reporte de conciliación contable'))
+          setCargando(false)
+          return
+        }
+        setMensaje('')
+        setMovimientos(resultado.data)
+        setCargando(false)
+      }
+    )
   }
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
@@ -89,6 +175,8 @@ export default function ReporteContablePage() {
             ))}
           </select>
         </div>
+
+        {mensaje && <p className="mb-6 text-sm text-red-700 bg-red-50 border border-red-200 p-4 rounded-xl">{mensaje}</p>}
 
         {periodoContable && (
           <>
@@ -141,7 +229,7 @@ export default function ReporteContablePage() {
                       </tr>
                     )
                   })}
-                  {movimientos.length === 0 && !cargando && (
+                  {movimientos.length === 0 && !cargando && !mensaje && (
                     <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">No hay movimientos para este periodo contable.</td></tr>
                   )}
                 </tbody>
