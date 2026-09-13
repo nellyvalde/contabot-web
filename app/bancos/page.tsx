@@ -5,11 +5,12 @@ import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
 import { confirmarCruceFactura } from '@/lib/bancos/confirmarCruceFactura'
+import { confirmarCruceNomina } from '@/lib/bancos/confirmarCruceNomina'
 import { type CandidatoAmbiguo } from '@/lib/bancos/emparejarMovimientos'
-import { registrarAbono } from '@/lib/nomina/abonos'
 import { MENSAJE_CARGA_DESHABILITADA } from '@/lib/bancos/cargaDeshabilitada'
 import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
 import { hayResultadosParaMostrar } from '@/lib/bancos/estadoVista'
+import { claveConsulta, ejecutarSiVigente, type EstadoConsultaVigente } from '@/lib/bancos/consultaVigente'
 
 type MovimientoBanco = { fecha: string; descripcion: string; valor: number }
 type ResultadoCruce = {
@@ -50,13 +51,23 @@ export type MovimientoConciliadoContable = ResultadoCruce & { periodoBancario: s
 // real del extracto bancario), esta filtra por `periodo_contable` (el mes en que
 // el gasto se causa según NIIF). No modifica ningún estado del componente ni
 // afecta la vista actual de /bancos.
+//
+// Revisa los 3 errores de Supabase explicitamente: un fallo aqui NUNCA debe
+// convertirse en un reporte vacio aparentemente valido (equivalente a "no
+// hay movimientos"). Si algo falla, se registra el detalle tecnico y se
+// lanza un error controlado -- el llamador (reporte-contable/page.tsx) debe
+// capturarlo y mostrarlo, nunca tratarlo como una lista vacia.
 export async function obtenerMovimientosPorPeriodoContable(
   empresaId: string,
   periodoContable: string
 ): Promise<MovimientoConciliadoContable[]> {
   if (!empresaId || !periodoContable) return []
 
-  const [{ data: previa }, { data: facturas }, { data: nomina }] = await Promise.all([
+  const [
+    { data: previa, error: errorPrevia },
+    { data: facturas, error: errorFacturas },
+    { data: nomina, error: errorNomina },
+  ] = await Promise.all([
     supabase
       .from('conciliaciones_bancarias')
       .select('*')
@@ -72,6 +83,11 @@ export async function obtenerMovimientosPorPeriodoContable(
       .select('*')
       .eq('empresa_id', empresaId),
   ])
+
+  if (errorPrevia || errorFacturas || errorNomina) {
+    registrarErrorSupabase('cargar el reporte de conciliación contable', errorPrevia || errorFacturas || errorNomina)
+    throw new Error(mensajeErrorControlado('cargar el reporte de conciliación contable'))
+  }
 
   return (previa || []).map((r: any) => ({
     movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
@@ -92,7 +108,45 @@ export default function BancosPage() {
   const [periodos, setPeriodos] = useState<string[]>([])
   const [periodoSeleccionado, setPeriodoSeleccionado] = useState<string>('')
   const [periodoCerrado, setPeriodoCerrado] = useState(false)
-  const periodoConsultaRef = useRef<string>('')
+
+  // Empresa cuyo estado esta reflejado actualmente en resultados/periodos/etc.
+  // Al cambiar de empresa, se limpia todo lo derivado de la empresa anterior
+  // DURANTE EL RENDER (no en un useEffect) -- es el patron que React
+  // recomienda para "ajustar estado cuando cambia una prop" (ver
+  // react.dev, "You Might Not Need An Effect"): evita el pase de render
+  // extra de un efecto y el lint react-hooks/set-state-in-effect (llamar
+  // setState sincronicamente dentro de un efecto). El resultado es el
+  // mismo objetivo de seguridad: nunca se ve, ni siquiera brevemente, un
+  // resultado, mensaje, periodo o estado "cerrado" que en realidad
+  // pertenece a otra empresa.
+  const [empresaReflejada, setEmpresaReflejada] = useState(empresaActiva?.id)
+  if (empresaActiva?.id !== empresaReflejada) {
+    setEmpresaReflejada(empresaActiva?.id)
+    setResultados([])
+    setMensaje('')
+    setPeriodos([])
+    setPeriodoSeleccionado('')
+    setPeriodoCerrado(false)
+  }
+
+  // Claves de "consulta vigente" -- una por cada operacion asincrona que
+  // puede quedar obsoleta si el usuario cambia de empresa o de periodo
+  // antes de que la respuesta llegue. Cada clave incluye TODAS las
+  // dimensiones de las que depende esa consulta (empresaId siempre;
+  // periodo ademas para conciliaciones) -- antes solo se comparaba
+  // `periodo`, asi que una respuesta tardia de la empresa anterior podia
+  // sobreescribir el estado de la empresa nueva.
+  const consultaPeriodosRef = useRef<string>('')
+  const estadoConsultaPeriodos: EstadoConsultaVigente = {
+    obtenerClaveVigente: () => consultaPeriodosRef.current,
+    establecerClaveVigente: (c) => { consultaPeriodosRef.current = c },
+  }
+
+  const consultaConciliacionesRef = useRef<string>('')
+  const estadoConsultaConciliaciones: EstadoConsultaVigente = {
+    obtenerClaveVigente: () => consultaConciliacionesRef.current,
+    establecerClaveVigente: (c) => { consultaConciliacionesRef.current = c },
+  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
@@ -109,12 +163,12 @@ export default function BancosPage() {
   // Cargar conciliaciones bancarias guardadas cuando se monta el componente o cambia la empresa activa
   useEffect(() => {
     if (!empresaActiva?.id) return
-    cargarPeriodosDisponibles()
+    cargarPeriodosDisponibles(empresaActiva.id)
   }, [empresaActiva?.id])
 
   useEffect(() => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
-    cargarConciliacionesGuardadas(periodoSeleccionado)
+    cargarConciliacionesGuardadas(empresaActiva.id, periodoSeleccionado)
   }, [empresaActiva?.id, periodoSeleccionado])
 
   const obtenerPeriodosUnicos = (registros: any[]) => {
@@ -126,118 +180,150 @@ export default function BancosPage() {
     return Array.from(periodosSet).filter(Boolean).sort((a, b) => b.localeCompare(a))
   }
 
-  const cargarPeriodosDisponibles = async () => {
-    if (!empresaActiva?.id) return
+  const cargarPeriodosDisponibles = async (empresaId: string) => {
+    if (!empresaId) return
+    const clave = claveConsulta(empresaId)
 
-    const { data: periodosData, error: errorPeriodos } = await supabase
-      .from('periodos_conciliacion_bancaria')
-      .select('periodo,cerrado')
-      .eq('empresa_id', empresaActiva.id)
-      .order('periodo', { ascending: false })
+    await ejecutarSiVigente(
+      estadoConsultaPeriodos,
+      clave,
+      async () => {
+        const { data: periodosData, error: errorPeriodos } = await supabase
+          .from('periodos_conciliacion_bancaria')
+          .select('periodo,cerrado')
+          .eq('empresa_id', empresaId)
+          .order('periodo', { ascending: false })
 
-    if (errorPeriodos) {
-      registrarErrorSupabase('cargar los periodos disponibles', errorPeriodos)
-      setMensaje(mensajeErrorControlado('cargar los periodos disponibles'))
-      return
-    }
+        if (errorPeriodos) {
+          registrarErrorSupabase('cargar los periodos disponibles', errorPeriodos)
+          return { tipo: 'error' as const }
+        }
 
-    const { data: conciliacionesData, error: errorConciliaciones } = await supabase
-      .from('conciliaciones_bancarias')
-      .select('periodo')
-      .eq('empresa_id', empresaActiva.id)
+        const { data: conciliacionesData, error: errorConciliaciones } = await supabase
+          .from('conciliaciones_bancarias')
+          .select('periodo')
+          .eq('empresa_id', empresaId)
 
-    if (errorConciliaciones) {
-      registrarErrorSupabase('cargar los periodos con conciliaciones existentes', errorConciliaciones)
-      setMensaje(mensajeErrorControlado('cargar los periodos disponibles'))
-      return
-    }
+        if (errorConciliaciones) {
+          registrarErrorSupabase('cargar los periodos con conciliaciones existentes', errorConciliaciones)
+          return { tipo: 'error' as const }
+        }
 
-    const periodosDesdePeriodos = (periodosData || []).map((item: any) => item.periodo)
-    const periodosDesdeConciliaciones = (conciliacionesData || []).map((item: any) => item.periodo)
-    const periodosUnicos = Array.from(new Set([...periodosDesdePeriodos, ...periodosDesdeConciliaciones].filter(Boolean)))
-      .sort((a: string, b: string) => b.localeCompare(a))
+        const periodosDesdePeriodos = (periodosData || []).map((item: any) => item.periodo)
+        const periodosDesdeConciliaciones = (conciliacionesData || []).map((item: any) => item.periodo)
+        const periodosUnicos = Array.from(new Set([...periodosDesdePeriodos, ...periodosDesdeConciliaciones].filter(Boolean)))
+          .sort((a: string, b: string) => b.localeCompare(a))
 
-    const periodoInicial = periodosUnicos.length > 0 ? periodosUnicos[0] : construirPeriodo(new Date().toISOString().slice(0, 10))
-    const periodosFinales = periodosUnicos.length > 0 ? periodosUnicos : [periodoInicial]
+        const periodoInicial = periodosUnicos.length > 0 ? periodosUnicos[0] : construirPeriodo(new Date().toISOString().slice(0, 10))
+        const periodosFinales = periodosUnicos.length > 0 ? periodosUnicos : [periodoInicial]
+        const cerrado = !!periodosData?.find((item: any) => item.periodo === periodoInicial)?.cerrado
 
-    setPeriodos(periodosFinales)
-    setPeriodoSeleccionado(periodoInicial)
-    setPeriodoCerrado(!!periodosData?.find((item: any) => item.periodo === periodoInicial)?.cerrado)
+        return { tipo: 'ok' as const, periodosFinales, periodoInicial, cerrado }
+      },
+      (resultado) => {
+        if (resultado.tipo === 'error') {
+          setMensaje(mensajeErrorControlado('cargar los periodos disponibles'))
+          return
+        }
+        setPeriodos(resultado.periodosFinales)
+        setPeriodoSeleccionado(resultado.periodoInicial)
+        setPeriodoCerrado(resultado.cerrado)
+      }
+    )
   }
 
-  const cargarConciliacionesGuardadas = async (periodo: string) => {
-    if (!empresaActiva?.id || !periodo) return
+  const cargarConciliacionesGuardadas = async (empresaId: string, periodo: string) => {
+    if (!empresaId || !periodo) return
+    const clave = claveConsulta(empresaId, periodo)
 
-    // Marca cuál es la consulta "vigente": si el usuario cambia de periodo antes de que
-    // esta respuesta llegue, la comparación de abajo la descarta en vez de pisar el estado.
-    periodoConsultaRef.current = periodo
+    await ejecutarSiVigente(
+      estadoConsultaConciliaciones,
+      clave,
+      async () => {
+        const [{ data: previa, error: errorPrevia }, { data: periodoRecord, error: errorPeriodoRecord }] = await Promise.all([
+          supabase
+            .from('conciliaciones_bancarias')
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .eq('periodo', periodo)
+            .order('fecha_carga', { ascending: false }),
+          supabase
+            .from('periodos_conciliacion_bancaria')
+            .select('cerrado')
+            .eq('empresa_id', empresaId)
+            .eq('periodo', periodo)
+            .single(),
+        ])
 
-    const [{ data: previa, error: errorPrevia }, { data: periodoRecord, error: errorPeriodoRecord }] = await Promise.all([
-      supabase
-        .from('conciliaciones_bancarias')
-        .select('*')
-        .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodo)
-        .order('fecha_carga', { ascending: false }),
-      supabase
-        .from('periodos_conciliacion_bancaria')
-        .select('cerrado')
-        .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodo)
-        .single(),
-    ])
+        // PGRST116 = .single() no encontro fila -- es "este periodo todavia
+        // no tiene registro propio", no un fallo real; cualquier otro
+        // codigo si lo es.
+        if (errorPeriodoRecord && errorPeriodoRecord.code !== 'PGRST116') {
+          registrarErrorSupabase('consultar el estado del periodo', errorPeriodoRecord)
+        }
+        const cerrado = !!periodoRecord?.cerrado
 
-    if (periodoConsultaRef.current !== periodo) return
+        if (errorPrevia) {
+          registrarErrorSupabase('cargar las conciliaciones guardadas', errorPrevia)
+          return { tipo: 'error' as const, cerrado }
+        }
 
-    // PGRST116 = .single() no encontro fila -- es "este periodo todavia no
-    // tiene registro propio", no un fallo real; cualquier otro codigo si lo es.
-    if (errorPeriodoRecord && errorPeriodoRecord.code !== 'PGRST116') {
-      registrarErrorSupabase('consultar el estado del periodo', errorPeriodoRecord)
-    }
-    setPeriodoCerrado(!!periodoRecord?.cerrado)
+        if (!previa || previa.length === 0) {
+          return { tipo: 'vacio' as const, cerrado }
+        }
 
-    if (errorPrevia) {
-      registrarErrorSupabase('cargar las conciliaciones guardadas', errorPrevia)
-      setResultados([])
-      setMensaje(mensajeErrorControlado('cargar las conciliaciones guardadas'))
-      return
-    }
+        const { data: facturas, error: errorFacturas } = await supabase
+          .from('facturas')
+          .select('*')
+          .eq('empresa_id', empresaId)
+        if (errorFacturas) registrarErrorSupabase('cargar las facturas', errorFacturas)
 
-    if (!previa || previa.length === 0) {
-      setResultados([])
-      setMensaje(`No hay conciliaciones guardadas para ${formatearPeriodo(periodo)}.`)
-      return
-    }
+        const { data: nomina, error: errorNomina } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('empresa_id', empresaId)
+        if (errorNomina) registrarErrorSupabase('cargar la nómina', errorNomina)
 
-    const { data: facturas, error: errorFacturas } = await supabase
-      .from('facturas')
-      .select('*')
-      .eq('empresa_id', empresaActiva.id)
-    if (errorFacturas) registrarErrorSupabase('cargar las facturas', errorFacturas)
+        const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
+          id: r.id,
+          movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
+          documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
+          nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
+          estadoCruce: r.estado,
+          candidatosAmbiguos: r.candidatos_ambiguos ?? [],
+        }))
 
-    const { data: nomina, error: errorNomina } = await supabase
-      .from('nomina_programada')
-      .select('*')
-      .eq('empresa_id', empresaActiva.id)
-    if (errorNomina) registrarErrorSupabase('cargar la nómina', errorNomina)
+        return {
+          tipo: 'ok' as const,
+          cerrado,
+          resultadosPrevios,
+          totalPrevia: previa.length,
+          huboErrorEnriquecimiento: !!(errorFacturas || errorNomina),
+        }
+      },
+      (resultado) => {
+        setPeriodoCerrado(resultado.cerrado)
 
-    if (periodoConsultaRef.current !== periodo) return
+        if (resultado.tipo === 'error') {
+          setResultados([])
+          setMensaje(mensajeErrorControlado('cargar las conciliaciones guardadas'))
+          return
+        }
 
-    const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
-      id: r.id,
-      movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
-      documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
-      nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
-      estadoCruce: r.estado,
-      candidatosAmbiguos: r.candidatos_ambiguos ?? [],
-    }))
+        if (resultado.tipo === 'vacio') {
+          setResultados([])
+          setMensaje(`No hay conciliaciones guardadas para ${formatearPeriodo(periodo)}.`)
+          return
+        }
 
-    setResultados(resultadosPrevios)
-    let mensajeFinal = `Conciliacion previa cargada: ${previa.length} movimientos.`
-    if (errorFacturas || errorNomina) {
-      mensajeFinal += ' Algunos datos de facturas o nómina no se pudieron cargar.'
-    }
-    setMensaje(mensajeFinal)
+        setResultados(resultado.resultadosPrevios)
+        let mensajeFinal = `Conciliacion previa cargada: ${resultado.totalPrevia} movimientos.`
+        if (resultado.huboErrorEnriquecimiento) {
+          mensajeFinal += ' Algunos datos de facturas o nómina no se pudieron cargar.'
+        }
+        setMensaje(mensajeFinal)
+      }
+    )
   }
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
@@ -298,15 +384,21 @@ export default function BancosPage() {
       // si el extracto se vuelve a cruzar.
       const mov = resultado.movimiento
       const referencia = `banco:${empresaActiva.id}:${mov.fecha}:${mov.descripcion}:${mov.valor}`
-      await registrarAbono({
+
+      const resultadoConfirmacion = await confirmarCruceNomina({
         empresaId: empresaActiva.id,
         obligacionId: resultado.nominaEncontrada.id,
         valorAbonado: mov.valor,
         fechaAbono: mov.fecha,
         referencia,
         observaciones: mov.descripcion,
-        origen: 'banco',
       })
+
+      if (!resultadoConfirmacion.confirmado) {
+        setMensaje(resultadoConfirmacion.mensaje)
+        return
+      }
+
       setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
     }
   }
