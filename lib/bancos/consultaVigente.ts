@@ -18,19 +18,36 @@ export type EstadoConsultaVigente = {
 }
 
 // Marca `clave` como la consulta vigente, ejecuta `tarea`, y solo llama a
-// `aplicar` con su resultado si, cuando `tarea` termina, `clave` SIGUE
-// siendo la vigente (nadie disparo una consulta mas nueva mientras tanto).
-// Si una consulta mas nueva ya cambio la clave vigente, `aplicar` nunca se
-// invoca -- el resultado de la consulta vieja se descarta en silencio, sin
-// tocar ningun estado.
+// `aplicar` con su resultado si se cumplen DOS condiciones simultaneamente:
+//
+//   1. `clave` sigue siendo la vigente para ESTE tipo de consulta (nadie
+//      disparo una consulta mas nueva DEL MISMO TIPO mientras tanto).
+//   2. `siguesSiendoVigente()` (opcional) sigue devolviendo true -- pensado
+//      para una identidad INDEPENDIENTE del ciclo de vida de la consulta,
+//      tipicamente "el empresaId (y opcionalmente periodo) capturados al
+//      iniciar siguen siendo los actualmente renderizados". Este segundo
+//      chequeo existe porque el (1) por si solo tiene un hueco real: si la
+//      empresa activa cambia (o pasa a undefined) pero TODAVIA no se disparo
+//      ninguna consulta nueva de este tipo (el efecto que la dispararia
+//      puede no haber corrido todavia), la clave vigente de (1) sigue
+//      siendo la vieja -- nada la reemplazo -- asi que (1) solo, de forma
+//      aislada, dejaria pasar una respuesta que ya no corresponde a nada
+//      visible en pantalla. `siguesSiendoVigente` debe leer una referencia
+//      que se actualiza en CADA render (no solo cuando arranca una
+//      consulta) para cerrar ese hueco.
+//
+// Si cualquiera de las dos falla, `aplicar` nunca se invoca -- el resultado
+// se descarta en silencio, sin tocar ningun estado.
 export async function ejecutarSiVigente<T>(
   estado: EstadoConsultaVigente,
   clave: string,
   tarea: () => Promise<T>,
-  aplicar: (resultado: T) => void
+  aplicar: (resultado: T) => void,
+  siguesSiendoVigente: () => boolean = () => true
 ): Promise<void> {
   estado.establecerClaveVigente(clave)
   const resultado = await tarea()
   if (estado.obtenerClaveVigente() !== clave) return
+  if (!siguesSiendoVigente()) return
   aplicar(resultado)
 }

@@ -79,4 +79,57 @@ describe('ejecutarSiVigente', () => {
 
     expect(aplicados).toEqual(['datos-agosto'])
   })
+
+  // --- El parametro `siguesSiendoVigente` cubre el HUECO que (1) solo no
+  // puede cubrir: cuando nadie todavia disparo una consulta nueva del mismo
+  // tipo (la clave-por-tipo no cambio), pero la identidad real en pantalla
+  // (empresaId renderizado) ya no es la que inicio esta consulta.
+
+  it('empresa A inicia una consulta y la empresa activa pasa a "ninguna" (undefined) antes de resolver: la respuesta de A no aplica ningun estado', async () => {
+    const estado = crearEstado()
+    const aplicados: string[] = []
+    let empresaRenderizada: string | undefined = 'empresa-A'
+
+    await ejecutarSiVigente(
+      estado,
+      claveConsulta('empresa-A'),
+      () =>
+        esperar(5).then(() => {
+          // Mientras la consulta esta en curso, deja de haber empresa activa.
+          empresaRenderizada = undefined
+          return 'datos-A'
+        }),
+      (r) => aplicados.push(r),
+      () => empresaRenderizada === 'empresa-A'
+    )
+
+    expect(aplicados).toEqual([])
+  })
+
+  it('empresa A inicia una consulta y el usuario cambia a B ANTES de que el efecto de B dispare su propia consulta -- la clave-por-tipo sigue siendo la de A (nada la reemplazo), pero la identidad ya no: A no debe aplicar nada', async () => {
+    const estado = crearEstado()
+    const aplicados: string[] = []
+    let empresaRenderizada: string | undefined = 'empresa-A'
+
+    const promesaA = ejecutarSiVigente(
+      estado,
+      claveConsulta('empresa-A'),
+      () => esperar(20).then(() => 'datos-A'),
+      (r) => aplicados.push(r),
+      () => empresaRenderizada === 'empresa-A'
+    )
+
+    // El usuario cambia a B, pero deliberadamente NINGUNA consulta nueva se
+    // dispara todavia -- simula el hueco entre el cambio de render y el
+    // efecto que arrancaria la consulta de B. Si el codigo dependiera
+    // UNICAMENTE de que una consulta nueva reemplace la clave anterior (como
+    // antes de agregar este parametro), esta prueba fallaria: la clave
+    // vigente para "empresa" seguiria siendo la de A.
+    await esperar(5)
+    empresaRenderizada = 'empresa-B'
+
+    await promesaA
+
+    expect(aplicados).toEqual([])
+  })
 })
