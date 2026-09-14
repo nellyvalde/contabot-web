@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
-import { confirmarCruceFactura } from '@/lib/bancos/confirmarCruceFactura'
-import { confirmarCruceNomina } from '@/lib/bancos/confirmarCruceNomina'
+import { confirmarCruceConciliacion, type FilaAConfirmar } from '@/lib/bancos/confirmarCruceConciliacion'
+import { cerrarPeriodoBancario } from '@/lib/bancos/cerrarPeriodoBancario'
 import { type CandidatoAmbiguo } from '@/lib/bancos/emparejarMovimientos'
 import { MENSAJE_CARGA_DESHABILITADA } from '@/lib/bancos/cargaDeshabilitada'
 import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
@@ -129,6 +129,26 @@ export default function BancosPage() {
     setPeriodoCerrado(false)
   }
 
+  // Identidad vigente independiente del ciclo de vida de cada consulta.
+  // Escribir en un ref DURANTE el render esta prohibido por el compilador
+  // de React (regla react-hooks/refs: "Cannot update ref during render"),
+  // asi que se actualiza en un useEffect SIN arreglo de dependencias -- se
+  // ejecuta despues de CADA render, incluidos los causados por un cambio
+  // de empresa o de periodo. Esto sigue cerrando el hueco que motivo este
+  // ref (ver el comentario en ejecutarSiVigente, lib/bancos/consultaVigente.ts):
+  // el commit de React y el efecto pasivo que sigue corren de forma
+  // sincronica en el mismo turno de JavaScript, mucho antes de que CUALQUIER
+  // promesa de red real (Supabase, RPC) pueda resolver -- esas dependen de
+  // E/S real y como minimo tardan un ciclo completo del event loop. El ref
+  // NUNCA se lee durante el render, solo dentro de callbacks async
+  // (`esVigente`), asi que esto es compatible con el compilador.
+  const empresaIdRenderizadoRef = useRef<string | undefined>(empresaActiva?.id)
+  const periodoSeleccionadoRenderizadoRef = useRef<string>(periodoSeleccionado)
+  useEffect(() => {
+    empresaIdRenderizadoRef.current = empresaActiva?.id
+    periodoSeleccionadoRenderizadoRef.current = periodoSeleccionado
+  })
+
   // Claves de "consulta vigente" -- una por cada operacion asincrona que
   // puede quedar obsoleta si el usuario cambia de empresa o de periodo
   // antes de que la respuesta llegue. Cada clave incluye TODAS las
@@ -183,6 +203,7 @@ export default function BancosPage() {
   const cargarPeriodosDisponibles = async (empresaId: string) => {
     if (!empresaId) return
     const clave = claveConsulta(empresaId)
+    const esVigente = () => empresaIdRenderizadoRef.current === empresaId
 
     await ejecutarSiVigente(
       estadoConsultaPeriodos,
@@ -228,13 +249,16 @@ export default function BancosPage() {
         setPeriodos(resultado.periodosFinales)
         setPeriodoSeleccionado(resultado.periodoInicial)
         setPeriodoCerrado(resultado.cerrado)
-      }
+      },
+      esVigente
     )
   }
 
   const cargarConciliacionesGuardadas = async (empresaId: string, periodo: string) => {
     if (!empresaId || !periodo) return
     const clave = claveConsulta(empresaId, periodo)
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
 
     await ejecutarSiVigente(
       estadoConsultaConciliaciones,
@@ -322,14 +346,23 @@ export default function BancosPage() {
           mensajeFinal += ' Algunos datos de facturas o nómina no se pudieron cargar.'
         }
         setMensaje(mensajeFinal)
-      }
+      },
+      esVigente
     )
   }
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
+  // empresaId y periodo se capturan aqui, ANTES de cualquier await -- son
+  // exactamente los valores con los que se disparo esta accion. `esVigente`
+  // se evalua recien cuando la respuesta llega, leyendo los refs que se
+  // actualizan en cada render: si para entonces la empresa o el periodo
+  // renderizados ya cambiaron, cerrarPeriodoBancario descarta el resultado
+  // y aqui no se toca ningun estado.
   const cerrarPeriodo = async () => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
+    const empresaId = empresaActiva.id
+    const periodo = periodoSeleccionado
 
     let currentUser = user
     if (!currentUser) {
@@ -342,65 +375,78 @@ export default function BancosPage() {
       currentUser = data.user
     }
 
-    const { error: errorCerrar } = await supabase.from('periodos_conciliacion_bancaria').upsert(
-      {
-        empresa_id: empresaActiva.id,
-        periodo: periodoSeleccionado,
-        cerrado: true,
-        closed_at: new Date().toISOString(),
-        closed_by: currentUser?.id || null,
-      },
-      { onConflict: 'empresa_id,periodo' }
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
+
+    const resultado = await cerrarPeriodoBancario(
+      supabase,
+      { empresaId, periodo, usuarioId: currentUser?.id || null },
+      esVigente
     )
 
-    if (errorCerrar) {
-      registrarErrorSupabase('cerrar el periodo', errorCerrar)
-      setMensaje(mensajeErrorControlado('cerrar el periodo'))
+    if (resultado.tipo === 'descartado') return
+
+    if (resultado.tipo === 'error') {
+      setMensaje(resultado.mensaje)
       return
     }
 
     setPeriodoCerrado(true)
-    setMensaje(`Periodo ${formatearPeriodo(periodoSeleccionado)} cerrado.`)
+    setMensaje(`Periodo ${formatearPeriodo(periodo)} cerrado.`)
   }
 
+  // `idx` solo se usa para leer `resultado` de forma SINCRONA, antes de
+  // cualquier await -- de ahi en adelante toda la logica de esta funcion
+  // (incluida la aplicacion del resultado final a `resultados`) trabaja con
+  // `resultado.id`, nunca con `idx`, porque el arreglo puede haberse
+  // reordenado o recargado para cuando la respuesta llegue. empresaId y
+  // periodo tambien se capturan aqui, antes del primer await.
   const confirmarCruce = async (idx: number) => {
     const resultado = resultados[idx]
     if (!resultado || !empresaActiva?.id) return
 
-    if (resultado.documentoEncontrado) {
-      const resultadoRpc = await confirmarCruceFactura(supabase, resultado.id)
-      if (!resultadoRpc.ok) {
-        console.error('[Bancos] Error confirmando el cruce:', resultadoRpc.error)
-        setMensaje(mensajeErrorControlado('confirmar el cruce'))
-        return
-      }
-      setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
-      return
-    }
+    const empresaId = empresaActiva.id
+    const periodo = periodoSeleccionado
+    const id = resultado.id
 
-    if (resultado.nominaEncontrada) {
+    let fila: FilaAConfirmar
+    if (resultado.documentoEncontrado) {
+      fila = { tipo: 'factura', id }
+    } else if (resultado.nominaEncontrada) {
       // Se registra como abono (no como "Pagado" directo): el valor del movimiento bancario
       // puede ser un pago parcial. La referencia evita contar el mismo movimiento dos veces
       // si el extracto se vuelve a cruzar.
       const mov = resultado.movimiento
-      const referencia = `banco:${empresaActiva.id}:${mov.fecha}:${mov.descripcion}:${mov.valor}`
-
-      const resultadoConfirmacion = await confirmarCruceNomina({
-        empresaId: empresaActiva.id,
-        obligacionId: resultado.nominaEncontrada.id,
-        valorAbonado: mov.valor,
-        fechaAbono: mov.fecha,
-        referencia,
-        observaciones: mov.descripcion,
-      })
-
-      if (!resultadoConfirmacion.confirmado) {
-        setMensaje(resultadoConfirmacion.mensaje)
-        return
+      const referencia = `banco:${empresaId}:${mov.fecha}:${mov.descripcion}:${mov.valor}`
+      fila = {
+        tipo: 'nomina',
+        id,
+        parametros: {
+          empresaId,
+          obligacionId: resultado.nominaEncontrada.id,
+          valorAbonado: mov.valor,
+          fechaAbono: mov.fecha,
+          referencia,
+          observaciones: mov.descripcion,
+        },
       }
-
-      setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
+    } else {
+      return
     }
+
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
+
+    const resultadoConfirmacion = await confirmarCruceConciliacion(fila, esVigente, supabase)
+
+    if (resultadoConfirmacion.tipo === 'descartado') return
+
+    if (resultadoConfirmacion.tipo === 'error') {
+      setMensaje(resultadoConfirmacion.mensaje)
+      return
+    }
+
+    setResultados(prev => prev.map(r => r.id === resultadoConfirmacion.id ? { ...r, estadoCruce: 'confirmado' } : r))
   }
 
   if (!user) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>

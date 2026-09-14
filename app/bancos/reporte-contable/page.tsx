@@ -45,6 +45,20 @@ export default function ReporteContablePage() {
     setMensaje('')
   }
 
+  // Identidad vigente independiente del ciclo de vida de cada consulta,
+  // igual que en app/bancos/page.tsx -- ver el comentario alli (y en
+  // ejecutarSiVigente, lib/bancos/consultaVigente.ts) sobre por que la
+  // actualizacion va en un useEffect sin dependencias (nunca escrita
+  // durante el render: el compilador de React lo prohibe) y por que igual
+  // cierra el hueco de vigencia antes de que cualquier promesa de red real
+  // pueda resolver.
+  const empresaIdRenderizadoRef = useRef<string | undefined>(empresaActiva?.id)
+  const periodoContableRenderizadoRef = useRef<string>(periodoContable)
+  useEffect(() => {
+    empresaIdRenderizadoRef.current = empresaActiva?.id
+    periodoContableRenderizadoRef.current = periodoContable
+  })
+
   const consultaPeriodosRef = useRef<string>('')
   const estadoConsultaPeriodos: EstadoConsultaVigente = {
     obtenerClaveVigente: () => consultaPeriodosRef.current,
@@ -82,6 +96,7 @@ export default function ReporteContablePage() {
   const cargarPeriodosContables = async (empresaId: string) => {
     if (!empresaId) return
     const clave = claveConsulta(empresaId)
+    const esVigente = () => empresaIdRenderizadoRef.current === empresaId
 
     await ejecutarSiVigente(
       estadoConsultaPeriodos,
@@ -102,13 +117,16 @@ export default function ReporteContablePage() {
         }
         setPeriodos(resultado.periodosDisponibles)
         setPeriodoContable(resultado.periodosDisponibles[0] || '')
-      }
+      },
+      esVigente
     )
   }
 
   const cargarMovimientos = async (empresaId: string, periodo: string) => {
     if (!empresaId || !periodo) return
     const clave = claveConsulta(empresaId, periodo)
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoContableRenderizadoRef.current === periodo
     setCargando(true)
 
     await ejecutarSiVigente(
@@ -141,7 +159,8 @@ export default function ReporteContablePage() {
         setMensaje('')
         setMovimientos(resultado.data)
         setCargando(false)
-      }
+      },
+      esVigente
     )
   }
 
