@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
 import { confirmarCruceConciliacion, type FilaAConfirmar } from '@/lib/bancos/confirmarCruceConciliacion'
-import { cerrarPeriodoBancario } from '@/lib/bancos/cerrarPeriodoBancario'
+import { cerrarPeriodoBancario, type ParametrosCerrarPeriodo } from '@/lib/bancos/cerrarPeriodoBancario'
+import { crearAccionExclusiva } from '@/lib/bancos/accionExclusiva'
 import { type CandidatoAmbiguo } from '@/lib/bancos/emparejarMovimientos'
 import { MENSAJE_CARGA_DESHABILITADA } from '@/lib/bancos/cargaDeshabilitada'
 import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
@@ -127,6 +128,37 @@ export default function BancosPage() {
     setPeriodos([])
     setPeriodoSeleccionado('')
     setPeriodoCerrado(false)
+  }
+
+  // Dialogo de confirmacion de "Cerrar periodo" (hotfix del incidente de
+  // julio 2026: un solo clic cerro el periodo sin ninguna confirmacion).
+  // empresaModalCierre/periodoModalCierre capturan para QUE empresa y
+  // periodo se abrio el dialogo -- son la fuente de verdad de lo que el
+  // dialogo esta mostrando y de lo que "Si, cerrar periodo" va a cerrar,
+  // independientemente de si empresaActiva/periodoSeleccionado siguen
+  // cambiando mientras el dialogo esta abierto.
+  const [mostrarConfirmacionCierre, setMostrarConfirmacionCierre] = useState(false)
+  const [empresaModalCierre, setEmpresaModalCierre] = useState<{ id: string; nombre: string } | null>(null)
+  const [periodoModalCierre, setPeriodoModalCierre] = useState('')
+  const [cerrandoPeriodo, setCerrandoPeriodo] = useState(false)
+  const [errorConfirmacionCierre, setErrorConfirmacionCierre] = useState('')
+
+  // Si la empresa o el periodo activos cambian mientras el dialogo esta
+  // abierto, se cierra automaticamente DURANTE EL RENDER (mismo patron y
+  // misma razon que el bloque de arriba): un dialogo que sigue ofreciendo
+  // "Si, cerrar periodo" sobre una empresa o periodo que ya no son los que
+  // estan en pantalla es exactamente el tipo de clic accidental que motiva
+  // este hotfix. La garantia dura -- nunca cerrar el periodo de la
+  // empresa/periodo anterior -- la sigue dando cerrarPeriodoBancario via
+  // `esVigente` (usando los refs de abajo), con independencia de cuando se
+  // cierre visualmente el dialogo.
+  if (
+    mostrarConfirmacionCierre &&
+    empresaModalCierre &&
+    (empresaActiva?.id !== empresaModalCierre.id || periodoSeleccionado !== periodoModalCierre)
+  ) {
+    setMostrarConfirmacionCierre(false)
+    setErrorConfirmacionCierre('')
   }
 
   // Identidad vigente independiente del ciclo de vida de cada consulta.
@@ -354,35 +386,80 @@ export default function BancosPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
-  // empresaId y periodo se capturan aqui, ANTES de cualquier await -- son
-  // exactamente los valores con los que se disparo esta accion.
-  // cerrarPeriodoBancario posee TODA la secuencia de awaits que sigue
-  // (incluida la resolucion del usuario actual cuando `user` todavia no
-  // esta cargado) y revisa vigencia despues de cada uno -- nunca solo
-  // despues del ultimo -- asi que ni un error de auth.getUser() ni el
-  // resultado del cierre pueden aplicarse aqui si para entonces la empresa
-  // o el periodo renderizados ya cambiaron.
-  const cerrarPeriodo = async () => {
+  const dialogoCierreRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialogo = dialogoCierreRef.current
+    if (!dialogo) return
+    if (mostrarConfirmacionCierre && !dialogo.open) dialogo.showModal()
+    else if (!mostrarConfirmacionCierre && dialogo.open) dialogo.close()
+  }, [mostrarConfirmacionCierre])
+
+  // crearAccionExclusiva (no un simple `disabled={cerrandoPeriodo}`) es lo
+  // que de verdad impide una solicitud duplicada: la exclusion vive en una
+  // variable capturada en el cierre, mutada sincronicamente antes de
+  // cualquier await, asi que un doble clic disparado en el mismo tick --
+  // antes de que React re-renderice y aplique `disabled` -- no puede
+  // colarse. Los parametros/`esVigente` se pasan frescos en cada llamada
+  // (nunca capturados aqui), asi que este wrapper no arrastra un closure
+  // obsoleto de `user`/`empresaActiva` entre renders.
+  const cerrarPeriodoExclusivo = useRef(
+    crearAccionExclusiva(
+      (params: ParametrosCerrarPeriodo, esVigente: () => boolean) => cerrarPeriodoBancario(supabase, params, esVigente),
+      (enCurso: boolean) => setCerrandoPeriodo(enCurso)
+    )
+  ).current
+
+  const abrirConfirmacionCierre = () => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
-    const empresaId = empresaActiva.id
-    const periodo = periodoSeleccionado
+    setEmpresaModalCierre({ id: empresaActiva.id, nombre: empresaActiva.razon_social })
+    setPeriodoModalCierre(periodoSeleccionado)
+    setErrorConfirmacionCierre('')
+    setMostrarConfirmacionCierre(true)
+  }
+
+  const cancelarConfirmacionCierre = () => {
+    setMostrarConfirmacionCierre(false)
+    setErrorConfirmacionCierre('')
+  }
+
+  // empresaId y periodo se capturan aqui (de empresaModalCierre/
+  // periodoModalCierre, los valores CON LOS QUE SE ABRIO el dialogo), ANTES
+  // de cualquier await. cerrarPeriodoBancario posee toda la secuencia de
+  // awaits que sigue y revisa vigencia despues de cada uno -- nunca solo
+  // despues del ultimo -- asi que ni un error ni el resultado del cierre
+  // pueden aplicarse aqui si para entonces la empresa o el periodo
+  // renderizados ya cambiaron (y ademas, si eso pasa, el bloque de arriba
+  // ya cerro el dialogo durante el render).
+  const confirmarCierrePeriodo = async () => {
+    if (!empresaModalCierre || !periodoModalCierre) return
+    const empresaId = empresaModalCierre.id
+    const periodo = periodoModalCierre
+
+    setErrorConfirmacionCierre('')
 
     const esVigente = () =>
       empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
 
-    const resultado = await cerrarPeriodoBancario(
-      supabase,
+    const resultado = await cerrarPeriodoExclusivo(
       { empresaId, periodo, usuarioConocido: user ? { id: user.id } : null },
       esVigente
     )
 
-    if (resultado.tipo === 'descartado') return
+    // `undefined` = crearAccionExclusiva descarto un clic duplicado
+    // mientras el primero seguia en curso; 'descartado' = la identidad ya
+    // no es la vigente cuando la respuesta llego. En ambos casos no se
+    // toca ningun estado.
+    if (!resultado || resultado.tipo === 'descartado') return
 
     if (resultado.tipo === 'error') {
-      setMensaje(resultado.mensaje)
+      // Mensaje controlado (ya lo construyo cerrarPeriodoBancario, nunca
+      // el texto crudo de Supabase); el dialogo se queda abierto para que
+      // el usuario pueda intentarlo de nuevo sin volver a abrirlo.
+      setErrorConfirmacionCierre(resultado.mensaje)
       return
     }
 
+    setMostrarConfirmacionCierre(false)
     setPeriodoCerrado(true)
     setMensaje(`Periodo ${formatearPeriodo(periodo)} cerrado.`)
   }
@@ -477,12 +554,69 @@ export default function BancosPage() {
               </span>
             )}
             {periodoSeleccionado && !periodoCerrado && (
-              <button onClick={cerrarPeriodo} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-xl font-medium">
+              <button onClick={abrirConfirmacionCierre} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-xl font-medium">
                 Cerrar periodo
               </button>
             )}
           </div>
         </div>
+
+        <dialog
+          ref={dialogoCierreRef}
+          aria-labelledby="titulo-confirmar-cierre-periodo"
+          aria-describedby="descripcion-confirmar-cierre-periodo"
+          onCancel={e => { if (cerrandoPeriodo) e.preventDefault() }}
+          onClose={() => { setMostrarConfirmacionCierre(false); setErrorConfirmacionCierre('') }}
+          className="rounded-2xl shadow-xl max-w-md w-full p-6 backdrop:bg-black/40"
+        >
+          {empresaModalCierre && (
+            <>
+              <div className="flex items-start justify-between mb-4">
+                <h3 id="titulo-confirmar-cierre-periodo" className="text-lg font-semibold text-slate-900">
+                  Cerrar periodo
+                </h3>
+                <button
+                  type="button"
+                  onClick={cancelarConfirmacionCierre}
+                  disabled={cerrandoPeriodo}
+                  aria-label="Cerrar"
+                  className="text-slate-400 hover:text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ✕
+                </button>
+              </div>
+              <p id="descripcion-confirmar-cierre-periodo" className="text-sm text-slate-600 mb-2">
+                Vas a cerrar el periodo <strong>{formatearPeriodo(periodoModalCierre)}</strong> de{' '}
+                <strong>{empresaModalCierre.nombre}</strong>.
+              </p>
+              <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                Una vez cerrado, el periodo quedará bloqueado para cambios.
+              </p>
+              {errorConfirmacionCierre && (
+                <p role="alert" className="text-sm text-red-700 mb-4">{errorConfirmacionCierre}</p>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={cancelarConfirmacionCierre}
+                  disabled={cerrandoPeriodo}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarCierrePeriodo}
+                  disabled={cerrandoPeriodo}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {cerrandoPeriodo ? 'Cerrando…' : 'Sí, cerrar periodo'}
+                </button>
+              </div>
+            </>
+          )}
+        </dialog>
 
         {mensaje && <p className="mb-4 text-sm text-slate-600 bg-slate-50 p-4 rounded-xl">{mensaje}</p>}
 
