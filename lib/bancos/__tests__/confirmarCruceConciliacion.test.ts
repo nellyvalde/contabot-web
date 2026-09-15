@@ -7,7 +7,8 @@ const esperar = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 function fakeClienteRpc(rpcResultado: { data: unknown; error: { message: string } | null }) {
   const rpcSpy = vi.fn(() => Promise.resolve(rpcResultado))
-  return { rpc: rpcSpy, from: vi.fn() } as unknown as SupabaseClient
+  const cliente = { rpc: rpcSpy, from: vi.fn() } as unknown as SupabaseClient
+  return { cliente, rpcSpy }
 }
 
 const parametrosNomina = {
@@ -25,13 +26,13 @@ describe('confirmarCruceConciliacion', () => {
   afterEach(() => { spy.mockRestore() })
 
   it('fila sin id estable: nunca confirma, nunca llama al backend -- mensaje controlado', async () => {
-    const cliente = fakeClienteRpc({ data: null, error: null })
+    const { cliente, rpcSpy } = fakeClienteRpc({ data: null, error: null })
     const fila: FilaAConfirmar = { tipo: 'factura', id: undefined }
 
     const resultado = await confirmarCruceConciliacion(fila, () => true, cliente)
 
     expect(resultado.tipo).toBe('error')
-    expect((cliente.rpc as any)).not.toHaveBeenCalled()
+    expect(rpcSpy).not.toHaveBeenCalled()
   })
 
   it('FACTURA -- confirmacion iniciada en A no se aplica si, cuando la respuesta llega, la identidad vigente ya cambio (simula que A ya no es la empresa/periodo en pantalla)', async () => {
@@ -56,7 +57,7 @@ describe('confirmarCruceConciliacion', () => {
   })
 
   it('FACTURA -- ok:true y la identidad sigue vigente: SI confirma', async () => {
-    const cliente = fakeClienteRpc({ data: { ok: true, codigo: 'ok', mensaje: 'ok', conciliacion_id: 'conc-A', factura_id: 'fact-A' }, error: null })
+    const { cliente } = fakeClienteRpc({ data: { ok: true, codigo: 'ok', mensaje: 'ok', conciliacion_id: 'conc-A', factura_id: 'fact-A' }, error: null })
     const fila: FilaAConfirmar = { tipo: 'factura', id: 'conc-A' }
 
     const resultado = await confirmarCruceConciliacion(fila, () => true, cliente)
@@ -73,7 +74,7 @@ describe('confirmarCruceConciliacion', () => {
     })
 
     const fila: FilaAConfirmar = { tipo: 'nomina', id: 'conc-A', parametros: parametrosNomina }
-    const resultado = await confirmarCruceConciliacion(fila, () => identidadVigente, fakeClienteRpc({ data: null, error: null }), registrar)
+    const resultado = await confirmarCruceConciliacion(fila, () => identidadVigente, fakeClienteRpc({ data: null, error: null }).cliente, registrar)
 
     expect(resultado.tipo).toBe('descartado')
   })
@@ -82,7 +83,7 @@ describe('confirmarCruceConciliacion', () => {
     const registrar = vi.fn(async (): Promise<ResultadoAbono> => ({ ok: true, duplicado: false, saldoPendiente: 0, estado: 'Pagado' }))
     const fila: FilaAConfirmar = { tipo: 'nomina', id: 'conc-A', parametros: parametrosNomina }
 
-    const resultado = await confirmarCruceConciliacion(fila, () => true, fakeClienteRpc({ data: null, error: null }), registrar)
+    const resultado = await confirmarCruceConciliacion(fila, () => true, fakeClienteRpc({ data: null, error: null }).cliente, registrar)
 
     expect(resultado).toEqual({ tipo: 'confirmado', id: 'conc-A' })
   })
@@ -136,7 +137,7 @@ describe('confirmarCruceConciliacion', () => {
 
   it('la fila confirmada desaparece por completo del arreglo (ya no esta en ninguna posicion): aplicar por id no crea ni modifica ninguna fila', async () => {
     let filas = [{ id: 'conc-B', estadoCruce: 'encontrado' }]
-    const cliente = fakeClienteRpc({ data: { ok: true, codigo: 'ok', mensaje: 'ok', conciliacion_id: 'conc-A', factura_id: 'fact-A' }, error: null })
+    const { cliente } = fakeClienteRpc({ data: { ok: true, codigo: 'ok', mensaje: 'ok', conciliacion_id: 'conc-A', factura_id: 'fact-A' }, error: null })
     const fila: FilaAConfirmar = { tipo: 'factura', id: 'conc-A' }
 
     const resultado = await confirmarCruceConciliacion(fila, () => true, cliente)

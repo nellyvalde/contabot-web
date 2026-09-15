@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
@@ -132,19 +132,20 @@ export default function BancosPage() {
   // Identidad vigente independiente del ciclo de vida de cada consulta.
   // Escribir en un ref DURANTE el render esta prohibido por el compilador
   // de React (regla react-hooks/refs: "Cannot update ref during render"),
-  // asi que se actualiza en un useEffect SIN arreglo de dependencias -- se
-  // ejecuta despues de CADA render, incluidos los causados por un cambio
-  // de empresa o de periodo. Esto sigue cerrando el hueco que motivo este
-  // ref (ver el comentario en ejecutarSiVigente, lib/bancos/consultaVigente.ts):
-  // el commit de React y el efecto pasivo que sigue corren de forma
-  // sincronica en el mismo turno de JavaScript, mucho antes de que CUALQUIER
-  // promesa de red real (Supabase, RPC) pueda resolver -- esas dependen de
-  // E/S real y como minimo tardan un ciclo completo del event loop. El ref
-  // NUNCA se lee durante el render, solo dentro de callbacks async
+  // asi que se actualiza en useLayoutEffect SIN arreglo de dependencias --
+  // corre despues de CADA render, incluidos los causados por un cambio de
+  // empresa o de periodo. Se usa useLayoutEffect y NO useEffect a proposito:
+  // useEffect es un efecto PASIVO, programado para correr despues de que el
+  // navegador pinta -- no hay garantia de que corra antes de que una
+  // promesa pendiente continue. useLayoutEffect corre de forma SINCRONICA
+  // durante el commit, antes de que React devuelva el control al event
+  // loop, asi que se ejecuta antes de que cualquier microtask o callback de
+  // E/S en cola (una respuesta de Supabase, una RPC) pueda continuar. El
+  // ref NUNCA se lee durante el render, solo dentro de callbacks async
   // (`esVigente`), asi que esto es compatible con el compilador.
   const empresaIdRenderizadoRef = useRef<string | undefined>(empresaActiva?.id)
   const periodoSeleccionadoRenderizadoRef = useRef<string>(periodoSeleccionado)
-  useEffect(() => {
+  useLayoutEffect(() => {
     empresaIdRenderizadoRef.current = empresaActiva?.id
     periodoSeleccionadoRenderizadoRef.current = periodoSeleccionado
   })
@@ -354,33 +355,24 @@ export default function BancosPage() {
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
   // empresaId y periodo se capturan aqui, ANTES de cualquier await -- son
-  // exactamente los valores con los que se disparo esta accion. `esVigente`
-  // se evalua recien cuando la respuesta llega, leyendo los refs que se
-  // actualizan en cada render: si para entonces la empresa o el periodo
-  // renderizados ya cambiaron, cerrarPeriodoBancario descarta el resultado
-  // y aqui no se toca ningun estado.
+  // exactamente los valores con los que se disparo esta accion.
+  // cerrarPeriodoBancario posee TODA la secuencia de awaits que sigue
+  // (incluida la resolucion del usuario actual cuando `user` todavia no
+  // esta cargado) y revisa vigencia despues de cada uno -- nunca solo
+  // despues del ultimo -- asi que ni un error de auth.getUser() ni el
+  // resultado del cierre pueden aplicarse aqui si para entonces la empresa
+  // o el periodo renderizados ya cambiaron.
   const cerrarPeriodo = async () => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
     const empresaId = empresaActiva.id
     const periodo = periodoSeleccionado
-
-    let currentUser = user
-    if (!currentUser) {
-      const { data, error: errorUsuario } = await supabase.auth.getUser()
-      if (errorUsuario) {
-        registrarErrorSupabase('verificar tu sesión', errorUsuario)
-        setMensaje(mensajeErrorControlado('cerrar el periodo'))
-        return
-      }
-      currentUser = data.user
-    }
 
     const esVigente = () =>
       empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
 
     const resultado = await cerrarPeriodoBancario(
       supabase,
-      { empresaId, periodo, usuarioId: currentUser?.id || null },
+      { empresaId, periodo, usuarioConocido: user ? { id: user.id } : null },
       esVigente
     )
 

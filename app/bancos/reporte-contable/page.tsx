@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
@@ -43,18 +43,23 @@ export default function ReporteContablePage() {
     setPeriodoContable('')
     setMovimientos([])
     setMensaje('')
+    // Sin esto, una carga en curso al cambiar (o quitar) la empresa activa
+    // dejaria `cargando` en true para siempre si esa respuesta se descarta
+    // por identidad obsoleta (ver esVigente en cargarMovimientos) -- el
+    // spinner de la empresa anterior quedaria pegado sobre la vista nueva.
+    setCargando(false)
   }
 
   // Identidad vigente independiente del ciclo de vida de cada consulta,
   // igual que en app/bancos/page.tsx -- ver el comentario alli (y en
-  // ejecutarSiVigente, lib/bancos/consultaVigente.ts) sobre por que la
-  // actualizacion va en un useEffect sin dependencias (nunca escrita
-  // durante el render: el compilador de React lo prohibe) y por que igual
-  // cierra el hueco de vigencia antes de que cualquier promesa de red real
-  // pueda resolver.
+  // ejecutarSiVigente, lib/bancos/consultaVigente.ts). Se usa
+  // useLayoutEffect y NO useEffect: useEffect es un efecto pasivo, sin
+  // garantia de correr antes de que una promesa pendiente continue;
+  // useLayoutEffect corre sincronicamente durante el commit, antes de que
+  // React devuelva el control al event loop.
   const empresaIdRenderizadoRef = useRef<string | undefined>(empresaActiva?.id)
   const periodoContableRenderizadoRef = useRef<string>(periodoContable)
-  useEffect(() => {
+  useLayoutEffect(() => {
     empresaIdRenderizadoRef.current = empresaActiva?.id
     periodoContableRenderizadoRef.current = periodoContable
   })
