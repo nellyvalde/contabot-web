@@ -1,20 +1,16 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
-import { BANCOS, type BancoConfig } from '@/lib/bancos/config'
-import { registrarAbono } from '@/lib/nomina/abonos'
-import { confirmarCruceFactura } from '@/lib/bancos/confirmarCruceFactura'
-import {
-  filtrarFacturasValidas,
-  excluirFacturasReclamadas,
-  emparejarLote,
-  interpretarErrorInsercion,
-  type FacturaCruda,
-  type CandidatoAmbiguo,
-} from '@/lib/bancos/emparejarMovimientos'
+import { confirmarCruceConciliacion, type FilaAConfirmar } from '@/lib/bancos/confirmarCruceConciliacion'
+import { cerrarPeriodoBancario } from '@/lib/bancos/cerrarPeriodoBancario'
+import { type CandidatoAmbiguo } from '@/lib/bancos/emparejarMovimientos'
+import { MENSAJE_CARGA_DESHABILITADA } from '@/lib/bancos/cargaDeshabilitada'
+import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
+import { hayResultadosParaMostrar } from '@/lib/bancos/estadoVista'
+import { claveConsulta, ejecutarSiVigente, type EstadoConsultaVigente } from '@/lib/bancos/consultaVigente'
 
 type MovimientoBanco = { fecha: string; descripcion: string; valor: number }
 type ResultadoCruce = {
@@ -26,24 +22,6 @@ type ResultadoCruce = {
   candidatosAmbiguos?: CandidatoAmbiguo[]
   periodoDestino?: string
   fechaRealOrigen?: string | null
-}
-
-function parsearValor(texto: string, config: BancoConfig): number {
-  if (!texto) return 0
-  let limpio = texto.toString()
-  if (config.simboloMoneda) limpio = limpio.replace(config.simboloMoneda, '')
-  if (config.separadorMiles) limpio = limpio.replace(/\./g, '').replace(',', '.')
-  limpio = limpio.replace(',', '.').trim()
-  return Math.abs(parseFloat(limpio) || 0)
-}
-
-function parsearFecha(texto: string, formato: string): string {
-  if (!texto) return ''
-  const t = texto.toString().trim()
-  if (formato === 'YYYY/MM/DD') return t.replace(/\//g, '-')
-  if (formato === 'DD/MM/YYYY') { const [d, m, y] = t.split('/'); return `${y}-${m}-${d}` }
-  if (formato === 'MM/DD/YYYY') { const [m, d, y] = t.split('/'); return `${y}-${m}-${d}` }
-  return t
 }
 
 export const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -73,13 +51,23 @@ export type MovimientoConciliadoContable = ResultadoCruce & { periodoBancario: s
 // real del extracto bancario), esta filtra por `periodo_contable` (el mes en que
 // el gasto se causa según NIIF). No modifica ningún estado del componente ni
 // afecta la vista actual de /bancos.
+//
+// Revisa los 3 errores de Supabase explicitamente: un fallo aqui NUNCA debe
+// convertirse en un reporte vacio aparentemente valido (equivalente a "no
+// hay movimientos"). Si algo falla, se registra el detalle tecnico y se
+// lanza un error controlado -- el llamador (reporte-contable/page.tsx) debe
+// capturarlo y mostrarlo, nunca tratarlo como una lista vacia.
 export async function obtenerMovimientosPorPeriodoContable(
   empresaId: string,
   periodoContable: string
 ): Promise<MovimientoConciliadoContable[]> {
   if (!empresaId || !periodoContable) return []
 
-  const [{ data: previa }, { data: facturas }, { data: nomina }] = await Promise.all([
+  const [
+    { data: previa, error: errorPrevia },
+    { data: facturas, error: errorFacturas },
+    { data: nomina, error: errorNomina },
+  ] = await Promise.all([
     supabase
       .from('conciliaciones_bancarias')
       .select('*')
@@ -96,6 +84,11 @@ export async function obtenerMovimientosPorPeriodoContable(
       .eq('empresa_id', empresaId),
   ])
 
+  if (errorPrevia || errorFacturas || errorNomina) {
+    registrarErrorSupabase('cargar el reporte de conciliación contable', errorPrevia || errorFacturas || errorNomina)
+    throw new Error(mensajeErrorControlado('cargar el reporte de conciliación contable'))
+  }
+
   return (previa || []).map((r: any) => ({
     movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
     documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
@@ -110,20 +103,79 @@ export async function obtenerMovimientosPorPeriodoContable(
 export default function BancosPage() {
   const { empresaActiva } = useEmpresa()
   const [user, setUser] = useState<any>(null)
-  const [bancoSeleccionado, setBancoSeleccionado] = useState('av_villas')
-  const [movimientos, setMovimientos] = useState<MovimientoBanco[]>([])
   const [resultados, setResultados] = useState<ResultadoCruce[]>([])
-  const [procesando, setProcesando] = useState(false)
   const [mensaje, setMensaje] = useState('')
-  const [paso, setPaso] = useState<'subir' | 'revisar'>('subir')
-  const [mostrarSubida, setMostrarSubida] = useState(false)
   const [periodos, setPeriodos] = useState<string[]>([])
   const [periodoSeleccionado, setPeriodoSeleccionado] = useState<string>('')
   const [periodoCerrado, setPeriodoCerrado] = useState(false)
-  const periodoConsultaRef = useRef<string>('')
+
+  // Empresa cuyo estado esta reflejado actualmente en resultados/periodos/etc.
+  // Al cambiar de empresa, se limpia todo lo derivado de la empresa anterior
+  // DURANTE EL RENDER (no en un useEffect) -- es el patron que React
+  // recomienda para "ajustar estado cuando cambia una prop" (ver
+  // react.dev, "You Might Not Need An Effect"): evita el pase de render
+  // extra de un efecto y el lint react-hooks/set-state-in-effect (llamar
+  // setState sincronicamente dentro de un efecto). El resultado es el
+  // mismo objetivo de seguridad: nunca se ve, ni siquiera brevemente, un
+  // resultado, mensaje, periodo o estado "cerrado" que en realidad
+  // pertenece a otra empresa.
+  const [empresaReflejada, setEmpresaReflejada] = useState(empresaActiva?.id)
+  if (empresaActiva?.id !== empresaReflejada) {
+    setEmpresaReflejada(empresaActiva?.id)
+    setResultados([])
+    setMensaje('')
+    setPeriodos([])
+    setPeriodoSeleccionado('')
+    setPeriodoCerrado(false)
+  }
+
+  // Identidad vigente independiente del ciclo de vida de cada consulta.
+  // Escribir en un ref DURANTE el render esta prohibido por el compilador
+  // de React (regla react-hooks/refs: "Cannot update ref during render"),
+  // asi que se actualiza en useLayoutEffect SIN arreglo de dependencias --
+  // corre despues de CADA render, incluidos los causados por un cambio de
+  // empresa o de periodo. Se usa useLayoutEffect y NO useEffect a proposito:
+  // useEffect es un efecto PASIVO, programado para correr despues de que el
+  // navegador pinta -- no hay garantia de que corra antes de que una
+  // promesa pendiente continue. useLayoutEffect corre de forma SINCRONICA
+  // durante el commit, antes de que React devuelva el control al event
+  // loop, asi que se ejecuta antes de que cualquier microtask o callback de
+  // E/S en cola (una respuesta de Supabase, una RPC) pueda continuar. El
+  // ref NUNCA se lee durante el render, solo dentro de callbacks async
+  // (`esVigente`), asi que esto es compatible con el compilador.
+  const empresaIdRenderizadoRef = useRef<string | undefined>(empresaActiva?.id)
+  const periodoSeleccionadoRenderizadoRef = useRef<string>(periodoSeleccionado)
+  useLayoutEffect(() => {
+    empresaIdRenderizadoRef.current = empresaActiva?.id
+    periodoSeleccionadoRenderizadoRef.current = periodoSeleccionado
+  })
+
+  // Claves de "consulta vigente" -- una por cada operacion asincrona que
+  // puede quedar obsoleta si el usuario cambia de empresa o de periodo
+  // antes de que la respuesta llegue. Cada clave incluye TODAS las
+  // dimensiones de las que depende esa consulta (empresaId siempre;
+  // periodo ademas para conciliaciones) -- antes solo se comparaba
+  // `periodo`, asi que una respuesta tardia de la empresa anterior podia
+  // sobreescribir el estado de la empresa nueva.
+  const consultaPeriodosRef = useRef<string>('')
+  const estadoConsultaPeriodos: EstadoConsultaVigente = {
+    obtenerClaveVigente: () => consultaPeriodosRef.current,
+    establecerClaveVigente: (c) => { consultaPeriodosRef.current = c },
+  }
+
+  const consultaConciliacionesRef = useRef<string>('')
+  const estadoConsultaConciliaciones: EstadoConsultaVigente = {
+    obtenerClaveVigente: () => consultaConciliacionesRef.current,
+    establecerClaveVigente: (c) => { consultaConciliacionesRef.current = c },
+  }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error) {
+        registrarErrorSupabase('verificar la sesión', error)
+        window.location.href = '/'
+        return
+      }
       if (!data.user) window.location.href = '/'
       else setUser(data.user)
     })
@@ -132,12 +184,12 @@ export default function BancosPage() {
   // Cargar conciliaciones bancarias guardadas cuando se monta el componente o cambia la empresa activa
   useEffect(() => {
     if (!empresaActiva?.id) return
-    cargarPeriodosDisponibles()
+    cargarPeriodosDisponibles(empresaActiva.id)
   }, [empresaActiva?.id])
 
   useEffect(() => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
-    cargarConciliacionesGuardadas(periodoSeleccionado)
+    cargarConciliacionesGuardadas(empresaActiva.id, periodoSeleccionado)
   }, [empresaActiva?.id, periodoSeleccionado])
 
   const obtenerPeriodosUnicos = (registros: any[]) => {
@@ -149,460 +201,244 @@ export default function BancosPage() {
     return Array.from(periodosSet).filter(Boolean).sort((a, b) => b.localeCompare(a))
   }
 
-  const cargarPeriodosDisponibles = async () => {
-    if (!empresaActiva?.id) return
+  const cargarPeriodosDisponibles = async (empresaId: string) => {
+    if (!empresaId) return
+    const clave = claveConsulta(empresaId)
+    const esVigente = () => empresaIdRenderizadoRef.current === empresaId
 
-    const { data: periodosData } = await supabase
-      .from('periodos_conciliacion_bancaria')
-      .select('periodo,cerrado')
-      .eq('empresa_id', empresaActiva.id)
-      .order('periodo', { ascending: false })
+    await ejecutarSiVigente(
+      estadoConsultaPeriodos,
+      clave,
+      async () => {
+        const { data: periodosData, error: errorPeriodos } = await supabase
+          .from('periodos_conciliacion_bancaria')
+          .select('periodo,cerrado')
+          .eq('empresa_id', empresaId)
+          .order('periodo', { ascending: false })
 
-    const { data: conciliacionesData } = await supabase
-      .from('conciliaciones_bancarias')
-      .select('periodo')
-      .eq('empresa_id', empresaActiva.id)
+        if (errorPeriodos) {
+          registrarErrorSupabase('cargar los periodos disponibles', errorPeriodos)
+          return { tipo: 'error' as const }
+        }
 
-    const periodosDesdePeriodos = (periodosData || []).map((item: any) => item.periodo)
-    const periodosDesdeConciliaciones = (conciliacionesData || []).map((item: any) => item.periodo)
-    const periodosUnicos = Array.from(new Set([...periodosDesdePeriodos, ...periodosDesdeConciliaciones].filter(Boolean)))
-      .sort((a: string, b: string) => b.localeCompare(a))
+        const { data: conciliacionesData, error: errorConciliaciones } = await supabase
+          .from('conciliaciones_bancarias')
+          .select('periodo')
+          .eq('empresa_id', empresaId)
 
-    const periodoInicial = periodosUnicos.length > 0 ? periodosUnicos[0] : construirPeriodo(new Date().toISOString().slice(0, 10))
-    const periodosFinales = periodosUnicos.length > 0 ? periodosUnicos : [periodoInicial]
+        if (errorConciliaciones) {
+          registrarErrorSupabase('cargar los periodos con conciliaciones existentes', errorConciliaciones)
+          return { tipo: 'error' as const }
+        }
 
-    setPeriodos(periodosFinales)
-    setPeriodoSeleccionado(periodoInicial)
-    setPeriodoCerrado(!!periodosData?.find((item: any) => item.periodo === periodoInicial)?.cerrado)
+        const periodosDesdePeriodos = (periodosData || []).map((item: any) => item.periodo)
+        const periodosDesdeConciliaciones = (conciliacionesData || []).map((item: any) => item.periodo)
+        const periodosUnicos = Array.from(new Set([...periodosDesdePeriodos, ...periodosDesdeConciliaciones].filter(Boolean)))
+          .sort((a: string, b: string) => b.localeCompare(a))
+
+        const periodoInicial = periodosUnicos.length > 0 ? periodosUnicos[0] : construirPeriodo(new Date().toISOString().slice(0, 10))
+        const periodosFinales = periodosUnicos.length > 0 ? periodosUnicos : [periodoInicial]
+        const cerrado = !!periodosData?.find((item: any) => item.periodo === periodoInicial)?.cerrado
+
+        return { tipo: 'ok' as const, periodosFinales, periodoInicial, cerrado }
+      },
+      (resultado) => {
+        if (resultado.tipo === 'error') {
+          setMensaje(mensajeErrorControlado('cargar los periodos disponibles'))
+          return
+        }
+        setPeriodos(resultado.periodosFinales)
+        setPeriodoSeleccionado(resultado.periodoInicial)
+        setPeriodoCerrado(resultado.cerrado)
+      },
+      esVigente
+    )
   }
 
-  const cargarConciliacionesGuardadas = async (periodo: string) => {
-    if (!empresaActiva?.id || !periodo) return
+  const cargarConciliacionesGuardadas = async (empresaId: string, periodo: string) => {
+    if (!empresaId || !periodo) return
+    const clave = claveConsulta(empresaId, periodo)
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
 
-    // Marca cuál es la consulta "vigente": si el usuario cambia de periodo antes de que
-    // esta respuesta llegue, la comparación de abajo la descarta en vez de pisar el estado.
-    periodoConsultaRef.current = periodo
+    await ejecutarSiVigente(
+      estadoConsultaConciliaciones,
+      clave,
+      async () => {
+        const [{ data: previa, error: errorPrevia }, { data: periodoRecord, error: errorPeriodoRecord }] = await Promise.all([
+          supabase
+            .from('conciliaciones_bancarias')
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .eq('periodo', periodo)
+            .order('fecha_carga', { ascending: false }),
+          supabase
+            .from('periodos_conciliacion_bancaria')
+            .select('cerrado')
+            .eq('empresa_id', empresaId)
+            .eq('periodo', periodo)
+            .single(),
+        ])
 
-    const [{ data: previa }, { data: periodoRecord }] = await Promise.all([
-      supabase
-        .from('conciliaciones_bancarias')
-        .select('*')
-        .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodo)
-        .order('fecha_carga', { ascending: false }),
-      supabase
-        .from('periodos_conciliacion_bancaria')
-        .select('cerrado')
-        .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodo)
-        .single(),
-    ])
+        // PGRST116 = .single() no encontro fila -- es "este periodo todavia
+        // no tiene registro propio", no un fallo real; cualquier otro
+        // codigo si lo es.
+        if (errorPeriodoRecord && errorPeriodoRecord.code !== 'PGRST116') {
+          registrarErrorSupabase('consultar el estado del periodo', errorPeriodoRecord)
+        }
+        const cerrado = !!periodoRecord?.cerrado
 
-    if (periodoConsultaRef.current !== periodo) return
+        if (errorPrevia) {
+          registrarErrorSupabase('cargar las conciliaciones guardadas', errorPrevia)
+          return { tipo: 'error' as const, cerrado }
+        }
 
-    setPeriodoCerrado(!!periodoRecord?.cerrado)
-    if (!previa || previa.length === 0) {
-      setResultados([])
-      setMensaje(`No hay conciliaciones guardadas para ${formatearPeriodo(periodo)}.`)
-      return
-    }
+        if (!previa || previa.length === 0) {
+          return { tipo: 'vacio' as const, cerrado }
+        }
 
-    setMensaje('')
-    const { data: facturas } = await supabase
-      .from('facturas')
-      .select('*')
-      .eq('empresa_id', empresaActiva.id)
+        const { data: facturas, error: errorFacturas } = await supabase
+          .from('facturas')
+          .select('*')
+          .eq('empresa_id', empresaId)
+        if (errorFacturas) registrarErrorSupabase('cargar las facturas', errorFacturas)
 
-    const { data: nomina } = await supabase
-      .from('nomina_programada')
-      .select('*')
-      .eq('empresa_id', empresaActiva.id)
+        const { data: nomina, error: errorNomina } = await supabase
+          .from('nomina_programada')
+          .select('*')
+          .eq('empresa_id', empresaId)
+        if (errorNomina) registrarErrorSupabase('cargar la nómina', errorNomina)
 
-    if (periodoConsultaRef.current !== periodo) return
+        const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
+          id: r.id,
+          movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
+          documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
+          nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
+          estadoCruce: r.estado,
+          candidatosAmbiguos: r.candidatos_ambiguos ?? [],
+        }))
 
-    const resultadosPrevios: ResultadoCruce[] = previa.map((r: any) => ({
-      id: r.id,
-      movimiento: { fecha: r.movimiento_fecha, descripcion: r.movimiento_descripcion, valor: r.movimiento_valor },
-      documentoEncontrado: r.documento_id ? (facturas || []).find((f: any) => f.id === r.documento_id) || null : null,
-      nominaEncontrada: r.nomina_id ? (nomina || []).find((n: any) => n.id === r.nomina_id) || null : null,
-      estadoCruce: r.estado,
-      candidatosAmbiguos: r.candidatos_ambiguos ?? [],
-    }))
+        return {
+          tipo: 'ok' as const,
+          cerrado,
+          resultadosPrevios,
+          totalPrevia: previa.length,
+          huboErrorEnriquecimiento: !!(errorFacturas || errorNomina),
+        }
+      },
+      (resultado) => {
+        setPeriodoCerrado(resultado.cerrado)
 
-    setResultados(resultadosPrevios)
-    setPaso('revisar')
-    setMensaje(`Conciliacion previa cargada: ${previa.length} movimientos.`)
+        if (resultado.tipo === 'error') {
+          setResultados([])
+          setMensaje(mensajeErrorControlado('cargar las conciliaciones guardadas'))
+          return
+        }
+
+        if (resultado.tipo === 'vacio') {
+          setResultados([])
+          setMensaje(`No hay conciliaciones guardadas para ${formatearPeriodo(periodo)}.`)
+          return
+        }
+
+        setResultados(resultado.resultadosPrevios)
+        let mensajeFinal = `Conciliacion previa cargada: ${resultado.totalPrevia} movimientos.`
+        if (resultado.huboErrorEnriquecimiento) {
+          mensajeFinal += ' Algunos datos de facturas o nómina no se pudieron cargar.'
+        }
+        setMensaje(mensajeFinal)
+      },
+      esVigente
+    )
   }
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
-  async function obtenerPeriodoAbierto(empresaId: string): Promise<string> {
-    const hoy = new Date()
-    const { data, error } = await supabase
-      .from('periodos_conciliacion_bancaria')
-      .select('periodo')
-      .eq('empresa_id', empresaId)
-      .eq('cerrado', false)
-      .order('periodo', { ascending: false })
-      .limit(1)
-
-    if (error || !data || data.length === 0) {
-      return construirPeriodo(hoy.toISOString().slice(0, 10))
-    }
-
-    return data[0]?.periodo || construirPeriodo(hoy.toISOString().slice(0, 10))
-  }
-
-  const handleArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !empresaActiva?.id) return
-    if (periodoCerrado) {
-      setMensaje('El periodo seleccionado está cerrado. Abre otro periodo o crea uno nuevo antes de subir el extracto.')
-      return
-    }
-
-    setProcesando(true)
-    setMensaje('Leyendo extracto bancario...')
-    setMovimientos([])
-    setResultados([])
-
-    const config = BANCOS[bancoSeleccionado]
-    try {
-      let movs: MovimientoBanco[] = []
-      if (file.name.endsWith('.pdf')) movs = await leerPDF(file, config)
-      else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) movs = await leerExcel(file, config)
-      else if (file.name.endsWith('.csv')) movs = await leerCSV(file, config)
-      else { setMensaje('Formato no soportado. Usa PDF, Excel o CSV.'); setProcesando(false); return }
-
-      if (movs.length === 0) { setMensaje('No se encontraron movimientos.'); setProcesando(false); return }
-
-      setMovimientos(movs)
-      setMensaje(`Se encontraron ${movs.length} movimientos. Cruzando con documentos...`)
-      const periodoObjetivo = periodoSeleccionado || construirPeriodo(new Date().toISOString().slice(0, 10))
-      // Asegurar que el periodo exista antes de borrar conciliaciones no confirmadas de ese periodo
-      await crearOactualizarPeriodo(periodoObjetivo)
-      // Borrar únicamente conciliaciones NO confirmadas del periodo objetivo (no afectar otros periodos)
-      await supabase.from('conciliaciones_bancarias').delete()
-        .eq('empresa_id', empresaActiva.id)
-        .eq('periodo', periodoObjetivo)
-        .neq('estado', 'confirmado')
-      await cruzarConDocumentos(movs)
-      setPaso('revisar')
-      setMostrarSubida(false)
-    } catch (err: any) {
-      setMensaje('Error leyendo el archivo: ' + err.message)
-    }
-    setProcesando(false)
-  }
-
-  const leerPDF = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
-    const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
-    const arrayBuffer = await file.arrayBuffer()
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    const movs: MovimientoBanco[] = []
-    const regexFecha = /^\d{4}\/\d{2}\/\d{2}$|^\d{2}\/\d{2}\/\d{4}$/
-    const stopMarkers = [
-      'VIGENCIA', 'TASA', 'TASAS', 'INTERES', 'INTERÉS', 'COSTO EFECTIVO', 'CONDICIONES', 'SALDO'
-    ]
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const lineas: Record<number, { str: string; x: number }[]> = {}
-      for (const item of content.items as any[]) {
-        const y = Math.round(item.transform[5] / 2) * 2
-        if (!lineas[y]) lineas[y] = []
-        if (item.str.trim()) lineas[y].push({ str: item.str, x: item.transform[4] })
-      }
-
-      let tablaIniciada = false
-      for (const y of Object.keys(lineas).map(Number).sort((a, b) => b - a)) {
-        const textos = lineas[y].sort((a, b) => a.x - b.x).map(i => i.str.trim()).filter(Boolean)
-        if (textos.length < 2) continue
-
-        const lineaTexto = textos.join(' ').toUpperCase()
-        if (tablaIniciada && stopMarkers.some(marker => lineaTexto.includes(marker))) break
-
-        let idxFecha = textos.findIndex(t => regexFecha.test(t.trim()))
-        if (idxFecha === -1) {
-          const regexFechaDash = /^\d{4}-\d{2}-\d{2}$|^\d{2}-\d{2}-\d{4}$/
-          idxFecha = textos.findIndex(t => regexFechaDash.test(t.trim()))
-        }
-        if (idxFecha === -1) continue
-
-        const fechaToken = textos[idxFecha].trim().replace(/-/g, '/')
-        const fecha = parsearFecha(fechaToken, config.formatoFecha)
-        const partesDesc: string[] = [], gruposNumericos: string[] = []
-        let grupoActual = ''
-        for (let j = idxFecha + 1; j < textos.length; j++) {
-          const t = textos[j].trim()
-          if (/^[\$\d.,-]+$/.test(t.replace(/\s/g, ''))) grupoActual += t.replace(/\s/g, '')
-          else { if (grupoActual) { gruposNumericos.push(grupoActual); grupoActual = '' } partesDesc.push(t) }
-        }
-        if (grupoActual) gruposNumericos.push(grupoActual)
-
-        const descripcion = partesDesc.join(' ')
-        if (!descripcion || /^[\d.,%\s]+$/.test(descripcion)) continue
-
-        let valorTexto = ''
-        if (gruposNumericos.length >= 2) {
-          const gs: string[] = []
-          for (const g of gruposNumericos) gs.push(...g.split(/(?<=\d)(?=\$)/))
-          valorTexto = gs.length >= 2 ? gs[gs.length - 2] : gs[0]
-        } else if (gruposNumericos.length === 1) {
-          const p = gruposNumericos[0].split(/(?<=\d)(?=\$)/)
-          valorTexto = p.length >= 2 ? p[p.length - 2] : p[0]
-        }
-
-        if (/%/.test(valorTexto) || /^[\d.,]+%$/.test(valorTexto.trim())) continue
-
-        const montoFinal = parseFloat(valorTexto.replace(/\$/g, '').replace(/,/g, '').trim()) || 0
-        if (fecha && montoFinal > 0) {
-          tablaIniciada = true
-          movs.push({ fecha, descripcion, valor: montoFinal })
-        }
-      }
-    }
-    return movs
-  }
-
-  const leerExcel = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
-    const XLSX = await import('xlsx')
-    const arrayBuffer = await file.arrayBuffer()
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-    return rows.map(row => {
-      const fecha = parsearFecha(row[config.columnaFecha] || '', config.formatoFecha)
-      const descripcion = row[config.columnaDescripcion] || ''
-      const valor = config.columnaDebito && config.columnaCredito
-        ? parsearValor(row[config.columnaDebito] || '0', config) + parsearValor(row[config.columnaCredito] || '0', config)
-        : parsearValor(row[config.columnaValor] || '0', config)
-      return { fecha, descripcion, valor }
-    }).filter(m => m.fecha && m.valor > 0)
-  }
-
-  const leerCSV = async (file: File, config: BancoConfig): Promise<MovimientoBanco[]> => {
-    const lineas = (await file.text()).split('\n').filter(Boolean)
-    if (lineas.length < 2) return []
-    const enc = lineas[0].split(',').map(h => h.trim().replace(/"/g, ''))
-    const iF = enc.findIndex(h => h === config.columnaFecha)
-    const iD = enc.findIndex(h => h === config.columnaDescripcion)
-    const iV = enc.findIndex(h => h === config.columnaValor)
-    return lineas.slice(1).map(l => {
-      const c = l.split(',').map(x => x.trim().replace(/"/g, ''))
-      return { fecha: parsearFecha(c[iF] || '', config.formatoFecha), descripcion: c[iD] || '', valor: parsearValor(c[iV] || '0', config) }
-    }).filter(m => m.fecha && m.valor > 0)
-  }
-
-  const cruzarConDocumentos = async (movs: MovimientoBanco[]) => {
-    if (!empresaActiva?.id) return
-
-    const { data: facturasCrudas } = await supabase
-      .from('facturas').select('*')
-      .eq('empresa_id', empresaActiva.id)   // ← fix: era user_id
-      .in('estado', ['Pendiente', 'Vencido'])
-
-    const { data: nomina } = await supabase
-      .from('nomina_programada').select('*')
-      .eq('empresa_id', empresaActiva.id)   // ← fix: era user_id
-      .in('estado', ['Pendiente de Pago', 'Pago parcial'])
-
-    // Facturas ya reclamadas por una conciliacion activa en CUALQUIER
-    // periodo -- sin esto, una factura emparejada pero no confirmada
-    // todavia podria volver a emparejarse en otro periodo o en una
-    // recarga del mismo extracto.
-    const { data: conciliacionesActivas } = await supabase
-      .from('conciliaciones_bancarias')
-      .select('documento_id')
-      .eq('empresa_id', empresaActiva.id)
-      .not('documento_id', 'is', null)
-      .in('estado', ['encontrado', 'confirmado'])
-
-    const { data: periodosBancarios } = await supabase
-      .from('periodos_conciliacion_bancaria')
-      .select('periodo,cerrado')
-      .eq('empresa_id', empresaActiva.id)
-
-    const periodosCerrados = new Set(
-      (periodosBancarios || []).filter((item: any) => item.cerrado).map((item: any) => item.periodo)
-    )
-    const periodoAbierto = await obtenerPeriodoAbierto(empresaActiva.id)
-
-    const idsReclamados = new Set((conciliacionesActivas || []).map((c: any) => c.documento_id as string))
-    const candidatasValidas = filtrarFacturasValidas((facturasCrudas || []) as FacturaCruda[])
-    const candidatasDisponibles = excluirFacturasReclamadas(candidatasValidas, idsReclamados)
-
-    // Solo los movimientos de periodos abiertos participan del emparejamiento
-    // -- uno de periodo cerrado nunca debe consumir una factura del pool
-    // (por eso se filtran ANTES de llamar a emparejarLote, no despues).
-    const indicesActivos: number[] = []
-    movs.forEach((mov, idx) => { if (!periodosCerrados.has(construirPeriodo(mov.fecha))) indicesActivos.push(idx) })
-    const resultadosMatchActivos = emparejarLote(
-      indicesActivos.map(idx => ({ fecha: movs[idx].fecha, valor: movs[idx].valor })),
-      candidatasDisponibles
-    )
-    const resultadosMatchPorIndice = new Map(indicesActivos.map((idx, i) => [idx, resultadosMatchActivos[i]]))
-
-    const resultadosCruce: ResultadoCruce[] = movs.map((mov, idx) => {
-      const periodoMovimiento = construirPeriodo(mov.fecha)
-      const esPeriodoCerrado = periodosCerrados.has(periodoMovimiento)
-      const periodoDestino = esPeriodoCerrado ? periodoAbierto : periodoMovimiento
-      const matchFactura = resultadosMatchPorIndice.get(idx)
-
-      const docEncontrado = !esPeriodoCerrado && matchFactura?.tipo === 'encontrado'
-        ? (facturasCrudas || []).find((f: any) => f.id === matchFactura.factura.id) || null
-        : null
-
-      // Nomina solo se intenta si la factura no quedo asignada de forma
-      // definitiva (ni encontrado) -- misma prioridad que antes, ahora
-      // tambien cubre el caso de ambiguedad: si nomina resuelve el
-      // movimiento, se prefiere sobre dejarlo en requiere_revision.
-      const nominaEncontrada = !esPeriodoCerrado && !docEncontrado
-        ? (nomina || []).find(n => Math.abs((n.neto_pagar || 0) - mov.valor) < 1000) || null
-        : null
-
-      let estadoCruce: ResultadoCruce['estadoCruce']
-      let candidatosAmbiguos: CandidatoAmbiguo[] = []
-
-      if (esPeriodoCerrado) {
-        estadoCruce = 'extemporaneo_pendiente'
-      } else if (docEncontrado || nominaEncontrada) {
-        estadoCruce = 'encontrado'
-      } else if (matchFactura?.tipo === 'requiere_revision') {
-        estadoCruce = 'requiere_revision'
-        candidatosAmbiguos = matchFactura.candidatos
-      } else {
-        estadoCruce = 'no_encontrado'
-      }
-
-      return {
-        id: crypto.randomUUID(),
-        movimiento: mov,
-        documentoEncontrado: docEncontrado,
-        nominaEncontrada: nominaEncontrada,
-        estadoCruce,
-        candidatosAmbiguos,
-        periodoDestino,
-        fechaRealOrigen: esPeriodoCerrado ? mov.fecha : null,
-      }
-    })
-
-    // Borrar únicamente conciliaciones NO confirmadas de los periodos que vamos a reemplazar
-    const periodosAReemplazar = Array.from(new Set(resultadosCruce.map(r => r.periodoDestino ?? construirPeriodo(r.movimiento.fecha))))
-    if (periodosAReemplazar.length > 0) {
-      const { error: errorDelete } = await supabase.from('conciliaciones_bancarias').delete()
-        .eq('empresa_id', empresaActiva.id)
-        .in('periodo', periodosAReemplazar)
-        .neq('estado', 'confirmado')
-
-      if (errorDelete) {
-        // No continuar al INSERT sin saber si las conciliaciones previas
-        // realmente se borraron -- insertar de todas formas arriesgaria
-        // filas duplicadas o inconsistentes para el mismo periodo.
-        console.error('[Bancos] Error eliminando conciliaciones previas:', errorDelete.message)
-        setMensaje('Error eliminando conciliaciones previas: ' + errorDelete.message)
-        return
-      }
-    }
-
-    const currentUser = user ?? (await supabase.auth.getUser()).data.user
-
-    const { error: errorInsert } = await supabase.from('conciliaciones_bancarias').insert(
-      resultadosCruce.map(r => ({
-        id: r.id,
-        user_id: currentUser?.id || null,
-        empresa_id: empresaActiva.id,
-        banco: bancoSeleccionado,
-        periodo: r.periodoDestino ?? construirPeriodo(r.movimiento.fecha),
-        movimiento_fecha: r.movimiento.fecha,
-        fecha_real_origen: r.fechaRealOrigen || null,
-        movimiento_descripcion: r.movimiento.descripcion,
-        movimiento_valor: r.movimiento.valor,
-        documento_id: (r.estadoCruce === 'extemporaneo_pendiente' || r.estadoCruce === 'requiere_revision')
-          ? null
-          : r.documentoEncontrado?.id || null,
-        nomina_id: r.estadoCruce === 'extemporaneo_pendiente' ? null : r.nominaEncontrada?.id || null,
-        estado: r.estadoCruce,
-        candidatos_ambiguos: r.candidatosAmbiguos ?? [],
-      }))
-    )
-
-    if (errorInsert) {
-      // No dejar en React filas "encontrado" (confirmables) que en realidad
-      // no quedaron guardadas en conciliaciones_bancarias -- el boton
-      // "Confirmar cruce" llamaria a la RPC con un id que no existe en la
-      // base de datos. resultados permanece en su estado previo (vacio, lo
-      // deja handleArchivo antes de llamar a esta funcion). Codigo 23505 =
-      // el indice unico conciliaciones_documento_activo_unico detecto que
-      // otra sesion ya reclamo una de estas facturas mientras se calculaba
-      // este cruce -- error real de concurrencia, no un bug.
-      console.error('[Bancos] Error guardando la conciliación:', errorInsert.code, errorInsert.message)
-      setMensaje(interpretarErrorInsercion(errorInsert))
-      return
-    }
-
-    setResultados(resultadosCruce)
-    setMensaje(`Cruce completado: ${resultadosCruce.filter(r => r.estadoCruce === 'encontrado').length} de ${movs.length} coinciden.`)
-  }
-
-  const crearOactualizarPeriodo = async (periodo: string) => {
-    if (!empresaActiva?.id || !periodo) return
-    await supabase.from('periodos_conciliacion_bancaria').upsert(
-      { empresa_id: empresaActiva.id, periodo, cerrado: false },
-      { onConflict: 'empresa_id,periodo' }
-    )
-  }
-
+  // empresaId y periodo se capturan aqui, ANTES de cualquier await -- son
+  // exactamente los valores con los que se disparo esta accion.
+  // cerrarPeriodoBancario posee TODA la secuencia de awaits que sigue
+  // (incluida la resolucion del usuario actual cuando `user` todavia no
+  // esta cargado) y revisa vigencia despues de cada uno -- nunca solo
+  // despues del ultimo -- asi que ni un error de auth.getUser() ni el
+  // resultado del cierre pueden aplicarse aqui si para entonces la empresa
+  // o el periodo renderizados ya cambiaron.
   const cerrarPeriodo = async () => {
     if (!empresaActiva?.id || !periodoSeleccionado) return
-    const currentUser = user ?? (await supabase.auth.getUser()).data.user
-    await supabase.from('periodos_conciliacion_bancaria').upsert(
-      {
-        empresa_id: empresaActiva.id,
-        periodo: periodoSeleccionado,
-        cerrado: true,
-        closed_at: new Date().toISOString(),
-        closed_by: currentUser?.id || null,
-      },
-      { onConflict: 'empresa_id,periodo' }
+    const empresaId = empresaActiva.id
+    const periodo = periodoSeleccionado
+
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
+
+    const resultado = await cerrarPeriodoBancario(
+      supabase,
+      { empresaId, periodo, usuarioConocido: user ? { id: user.id } : null },
+      esVigente
     )
+
+    if (resultado.tipo === 'descartado') return
+
+    if (resultado.tipo === 'error') {
+      setMensaje(resultado.mensaje)
+      return
+    }
+
     setPeriodoCerrado(true)
-    setMensaje(`Periodo ${formatearPeriodo(periodoSeleccionado)} cerrado.`)
+    setMensaje(`Periodo ${formatearPeriodo(periodo)} cerrado.`)
   }
 
+  // `idx` solo se usa para leer `resultado` de forma SINCRONA, antes de
+  // cualquier await -- de ahi en adelante toda la logica de esta funcion
+  // (incluida la aplicacion del resultado final a `resultados`) trabaja con
+  // `resultado.id`, nunca con `idx`, porque el arreglo puede haberse
+  // reordenado o recargado para cuando la respuesta llegue. empresaId y
+  // periodo tambien se capturan aqui, antes del primer await.
   const confirmarCruce = async (idx: number) => {
     const resultado = resultados[idx]
     if (!resultado || !empresaActiva?.id) return
 
-    if (resultado.documentoEncontrado) {
-      const resultadoRpc = await confirmarCruceFactura(supabase, resultado.id)
-      if (!resultadoRpc.ok) {
-        setMensaje('Error confirmando el cruce: ' + resultadoRpc.error)
-        return
-      }
-      setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
-      return
-    }
+    const empresaId = empresaActiva.id
+    const periodo = periodoSeleccionado
+    const id = resultado.id
 
-    if (resultado.nominaEncontrada) {
+    let fila: FilaAConfirmar
+    if (resultado.documentoEncontrado) {
+      fila = { tipo: 'factura', id }
+    } else if (resultado.nominaEncontrada) {
       // Se registra como abono (no como "Pagado" directo): el valor del movimiento bancario
       // puede ser un pago parcial. La referencia evita contar el mismo movimiento dos veces
       // si el extracto se vuelve a cruzar.
       const mov = resultado.movimiento
-      const referencia = `banco:${empresaActiva.id}:${mov.fecha}:${mov.descripcion}:${mov.valor}`
-      await registrarAbono({
-        empresaId: empresaActiva.id,
-        obligacionId: resultado.nominaEncontrada.id,
-        valorAbonado: mov.valor,
-        fechaAbono: mov.fecha,
-        referencia,
-        observaciones: mov.descripcion,
-        origen: 'banco',
-      })
-      setResultados(prev => prev.map((r, i) => i === idx ? { ...r, estadoCruce: 'confirmado' } : r))
+      const referencia = `banco:${empresaId}:${mov.fecha}:${mov.descripcion}:${mov.valor}`
+      fila = {
+        tipo: 'nomina',
+        id,
+        parametros: {
+          empresaId,
+          obligacionId: resultado.nominaEncontrada.id,
+          valorAbonado: mov.valor,
+          fechaAbono: mov.fecha,
+          referencia,
+          observaciones: mov.descripcion,
+        },
+      }
+    } else {
+      return
     }
+
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && periodoSeleccionadoRenderizadoRef.current === periodo
+
+    const resultadoConfirmacion = await confirmarCruceConciliacion(fila, esVigente, supabase)
+
+    if (resultadoConfirmacion.tipo === 'descartado') return
+
+    if (resultadoConfirmacion.tipo === 'error') {
+      setMensaje(resultadoConfirmacion.mensaje)
+      return
+    }
+
+    setResultados(prev => prev.map(r => r.id === resultadoConfirmacion.id ? { ...r, estadoCruce: 'confirmado' } : r))
   }
 
   if (!user) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>
@@ -617,66 +453,47 @@ export default function BancosPage() {
             Ver reporte de conciliación contable →
           </Link>
         </div>
-        <p className="text-slate-500 text-sm mb-6">Cruza tu extracto bancario con los documentos y nomina registrados en ContaBot</p>
+        <p className="text-slate-500 text-sm mb-6">Consulta tus conciliaciones bancarias guardadas por periodo</p>
 
-        {(paso === 'subir' || mostrarSubida) && (
-          <div className="bg-white rounded-2xl p-8 shadow-sm">
-            <div className="grid gap-6 md:grid-cols-2 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Banco</label>
-                <select value={bancoSeleccionado} onChange={e => setBancoSeleccionado(e.target.value)}
-                  className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm">
-                  {Object.entries(BANCOS).map(([key, banco]) => <option key={key} value={key}>{banco.nombre}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Periodo cargado</label>
-                <select value={periodoSeleccionado} onChange={e => setPeriodoSeleccionado(e.target.value)}
-                  className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-900 bg-white">
-                  <option value="" className="text-slate-900">Selecciona un periodo</option>
-                  {periodos.map(periodo => (
-                    <option key={periodo} value={periodo} className="text-slate-900">{formatearPeriodo(periodo)}</option>
-                  ))}
-                </select>
-              </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-800" role="status">
+          {MENSAJE_CARGA_DESHABILITADA}
+        </div>
+
+        <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Periodo</label>
+              <select value={periodoSeleccionado} onChange={e => setPeriodoSeleccionado(e.target.value)}
+                className="w-full max-w-xs px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-900 bg-white">
+                <option value="" className="text-slate-900">Selecciona un periodo</option>
+                {periodos.map(periodo => (
+                  <option key={periodo} value={periodo} className="text-slate-900">{formatearPeriodo(periodo)}</option>
+                ))}
+              </select>
             </div>
-            <div className="border-2 border-dashed border-slate-200 rounded-xl p-12 text-center">
-              <p className="text-4xl mb-4">🏦</p>
-              <p className="text-slate-600 mb-2 font-medium">Sube tu extracto bancario</p>
-              <p className="text-slate-400 text-sm mb-6">Formatos soportados: PDF, Excel (.xlsx), CSV</p>
-              <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-xl font-medium">
-                {procesando ? 'Procesando...' : 'Seleccionar extracto'}
-                <input type="file" accept=".pdf,.xlsx,.xls,.csv" onChange={handleArchivo} className="hidden" disabled={procesando} />
-              </label>
-            </div>
-            {mensaje && <p className="mt-4 text-sm text-slate-600 bg-slate-50 p-4 rounded-xl">{mensaje}</p>}
+            {periodoSeleccionado && (
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${periodoCerrado ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                {periodoCerrado ? 'Periodo cerrado' : 'Periodo abierto'}
+              </span>
+            )}
+            {periodoSeleccionado && !periodoCerrado && (
+              <button onClick={cerrarPeriodo} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-xl font-medium">
+                Cerrar periodo
+              </button>
+            )}
           </div>
-        )}
+        </div>
 
-        {paso === 'revisar' && resultados.length > 0 && (
+        {mensaje && <p className="mb-4 text-sm text-slate-600 bg-slate-50 p-4 rounded-xl">{mensaje}</p>}
+
+        {hayResultadosParaMostrar(resultados.length) ? (
           <div>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-4">
-              <div className="flex flex-wrap gap-2">
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">✅ Encontrados: {resultados.filter(r => r.estadoCruce === 'encontrado').length}</span>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">❓ Sin coincidencia: {resultados.filter(r => r.estadoCruce === 'no_encontrado').length}</span>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">⚠️ Requiere revisión: {resultados.filter(r => r.estadoCruce === 'requiere_revision').length}</span>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">✔️ Confirmados: {resultados.filter(r => r.estadoCruce === 'confirmado').length}</span>
-                {periodoSeleccionado && (
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${periodoCerrado ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {periodoCerrado ? 'Periodo cerrado' : 'Periodo abierto'}
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-3 items-center">
-                {periodoSeleccionado && !periodoCerrado && (
-                  <button onClick={cerrarPeriodo} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-xl font-medium">
-                    Cerrar periodo
-                  </button>
-                )}
-                <button onClick={() => { setMostrarSubida(true); setMensaje('') }} className="text-sm text-slate-500 hover:text-slate-700 underline">Subir otro extracto</button>
-              </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">✅ Encontrados: {resultados.filter(r => r.estadoCruce === 'encontrado').length}</span>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">❓ Sin coincidencia: {resultados.filter(r => r.estadoCruce === 'no_encontrado').length}</span>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">⚠️ Requiere revisión: {resultados.filter(r => r.estadoCruce === 'requiere_revision').length}</span>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">✔️ Confirmados: {resultados.filter(r => r.estadoCruce === 'confirmado').length}</span>
             </div>
-            {mensaje && <p className="mb-4 text-sm text-slate-600 bg-slate-50 p-4 rounded-xl">{mensaje}</p>}
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
@@ -715,6 +532,10 @@ export default function BancosPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl p-8 shadow-sm text-center text-slate-500 text-sm">
+            No hay conciliaciones guardadas para mostrar en este periodo.
           </div>
         )}
       </main>
