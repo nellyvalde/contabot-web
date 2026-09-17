@@ -14,6 +14,7 @@
 // en memoria, sin tocar la red. El boton para iniciar una importacion real
 // (iniciar_o_reintentar_importacion, Bloque C) todavia no existe aqui.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { useEmpresa } from '@/lib/context/EmpresaContext'
 import Sidebar from '@/components/Sidebar'
@@ -23,13 +24,14 @@ import {
   validarArchivoAntesDeLeer,
   type MovimientoParseado,
   type FilaConError,
+  type ResultadoParseoAvVillas,
 } from '@/lib/bancos/parsearExtractoAvVillas'
 import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
-import { claveConsulta, ejecutarSiVigente, type EstadoConsultaVigente } from '@/lib/bancos/consultaVigente'
+import { claveConsulta, ejecutarSiVigente } from '@/lib/bancos/consultaVigente'
 
 export default function ImportarExtractoPage() {
   const { empresaActiva } = useEmpresa()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
 
   const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState('')
@@ -59,20 +61,24 @@ export default function ImportarExtractoPage() {
     setErrorArchivo('')
   }
 
-  // Identidad vigente para la carga de cuentas -- mismo patron que
-  // app/bancos/page.tsx (useLayoutEffect, nunca useEffect: ver el
-  // comentario alli y en ejecutarSiVigente, lib/bancos/consultaVigente.ts,
-  // sobre por que un efecto pasivo no basta).
+  // Identidad vigente -- empresa Y cuenta seleccionada -- para la carga de
+  // cuentas y para el parseo de archivo. useLayoutEffect, nunca useEffect:
+  // ver el comentario en app/bancos/page.tsx y en ejecutarSiVigente
+  // (lib/bancos/consultaVigente.ts) sobre por que un efecto pasivo no
+  // basta -- debe reflejar el valor REALMENTE renderizado antes de que
+  // cualquier lectura de archivo (o consulta) pendiente pueda resolver.
   const empresaIdRenderizadoRef = useRef<string | undefined>(empresaActiva?.id)
+  const cuentaSeleccionadaRenderizadaRef = useRef<string>(cuentaSeleccionada)
   useLayoutEffect(() => {
     empresaIdRenderizadoRef.current = empresaActiva?.id
+    cuentaSeleccionadaRenderizadaRef.current = cuentaSeleccionada
   })
 
   const consultaCuentasRef = useRef<string>('')
-  const estadoConsultaCuentas: EstadoConsultaVigente = {
-    obtenerClaveVigente: () => consultaCuentasRef.current,
-    establecerClaveVigente: (c) => { consultaCuentasRef.current = c },
-  }
+  // Identidad vigente para la lectura/parseo de archivo (Bloque B) --
+  // independiente de la de arriba porque protege una operacion distinta
+  // (un archivo concreto, no la lista de cuentas).
+  const consultaArchivoRef = useRef<string>('')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
@@ -86,17 +92,26 @@ export default function ImportarExtractoPage() {
     })
   }, [])
 
+  // La carga de cuentas vive ENTERAMENTE dentro del efecto (no como una
+  // funcion `cargarCuentas` aparte referenciada antes de declararse) --
+  // evita tanto el hallazgo de lint "accessed before declared"
+  // (react-hooks/immutability) como la dependencia faltante
+  // (react-hooks/exhaustive-deps) que esa funcion aparte generaria: el
+  // objeto `estado` se construye inline, leyendo/escribiendo unicamente
+  // `consultaCuentasRef.current` (un ref, que el propio linter reconoce
+  // como estable y no exige en el arreglo de dependencias).
   useEffect(() => {
-    if (!empresaActiva?.id) return
-    cargarCuentas(empresaActiva.id)
-  }, [empresaActiva?.id])
+    const empresaId = empresaActiva?.id
+    if (!empresaId) return
 
-  const cargarCuentas = async (empresaId: string) => {
     const clave = claveConsulta(empresaId)
     const esVigente = () => empresaIdRenderizadoRef.current === empresaId
 
-    await ejecutarSiVigente(
-      estadoConsultaCuentas,
+    ejecutarSiVigente(
+      {
+        obtenerClaveVigente: () => consultaCuentasRef.current,
+        establecerClaveVigente: (c: string) => { consultaCuentasRef.current = c },
+      },
       clave,
       () => obtenerCuentasBancarias(supabase, empresaId),
       (resultado) => {
@@ -109,14 +124,29 @@ export default function ImportarExtractoPage() {
       },
       esVigente
     )
-  }
+  }, [empresaActiva?.id])
 
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
-  const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCuentaSeleccionada = (nuevaCuentaId: string) => {
+    setCuentaSeleccionada(nuevaCuentaId)
+    // Cambiar de cuenta invalida cualquier previsualizacion en pantalla --
+    // ya no corresponde a la cuenta que ahora esta seleccionada.
+    setNombreArchivo('')
+    setMovimientos([])
+    setFilasConError([])
+    setTotalFilasLeidas(0)
+    setErrorArchivo('')
+  }
+
+  const handleArchivoSeleccionado = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = '' // permite volver a elegir el mismo archivo despues de un error
     if (!file) return
+
+    const empresaId = empresaActiva?.id
+    const cuentaId = cuentaSeleccionada
+    if (!empresaId || !cuentaId) return
 
     setNombreArchivo(file.name)
     setMovimientos([])
@@ -126,27 +156,51 @@ export default function ImportarExtractoPage() {
 
     const validacion = validarArchivoAntesDeLeer(file.name, file.size)
     if (!validacion.ok) {
+      // Sincronico, sin ningun await de por medio -- no puede quedar
+      // obsoleto, se aplica directo.
       setErrorArchivo(validacion.error)
       return
     }
 
-    let bytes: ArrayBuffer
-    try {
-      bytes = await file.arrayBuffer()
-    } catch {
-      setErrorArchivo(mensajeErrorControlado('leer el archivo'))
-      return
-    }
+    // Identidad capturada AQUI, antes de file.arrayBuffer() (el unico
+    // await real de este flujo): empresaId, cuentaId, y un token de
+    // operacion unico (claveConsulta ya incluye el token, asi que un
+    // segundo archivo seleccionado antes de que el primero termine de
+    // leerse siempre reemplaza la clave vigente). Si la empresa o la
+    // cuenta activas cambian mientras el archivo se esta leyendo o
+    // parseando, `esVigente` lo detecta al terminar y el resultado se
+    // descarta sin tocar la UI -- ni el archivo de otra cuenta, ni un
+    // error, ni una previsualizacion.
+    const token = crypto.randomUUID()
+    const clave = claveConsulta(empresaId, cuentaId, token)
+    const esVigente = () =>
+      empresaIdRenderizadoRef.current === empresaId && cuentaSeleccionadaRenderizadaRef.current === cuentaId
 
-    const resultado = parsearExtractoAvVillas(bytes, file.name)
-    if (!resultado.ok) {
-      setErrorArchivo(resultado.error)
-      return
-    }
-
-    setMovimientos(resultado.movimientos)
-    setFilasConError(resultado.filasConError)
-    setTotalFilasLeidas(resultado.totalFilasLeidas)
+    ejecutarSiVigente(
+      {
+        obtenerClaveVigente: () => consultaArchivoRef.current,
+        establecerClaveVigente: (c: string) => { consultaArchivoRef.current = c },
+      },
+      clave,
+      async (): Promise<ResultadoParseoAvVillas> => {
+        try {
+          const bytes = await file.arrayBuffer()
+          return parsearExtractoAvVillas(bytes, file.name)
+        } catch {
+          return { ok: false, error: mensajeErrorControlado('leer el archivo') }
+        }
+      },
+      (resultado) => {
+        if (!resultado.ok) {
+          setErrorArchivo(resultado.error)
+          return
+        }
+        setMovimientos(resultado.movimientos)
+        setFilasConError(resultado.filasConError)
+        setTotalFilasLeidas(resultado.totalFilasLeidas)
+      },
+      esVigente
+    )
   }
 
   if (!user) return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><p className="text-white">Cargando...</p></div>
@@ -169,7 +223,7 @@ export default function ImportarExtractoPage() {
           {mensajeCuentas && <p className="text-sm text-slate-500 mb-2">{mensajeCuentas}</p>}
           <select
             value={cuentaSeleccionada}
-            onChange={e => setCuentaSeleccionada(e.target.value)}
+            onChange={e => handleCuentaSeleccionada(e.target.value)}
             disabled={cuentas.length === 0}
             className="w-full max-w-md px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-900 bg-white"
           >

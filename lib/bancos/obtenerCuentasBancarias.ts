@@ -25,6 +25,16 @@ export type ResultadoObtenerCuentas =
   | { ok: true; cuentas: CuentaBancaria[] }
   | { ok: false; mensaje: string }
 
+// Forma cruda de la fila tal como la devuelve Supabase (columnas en
+// snake_case) -- evita `any` en el .map() de abajo.
+type FilaCuentaBancariaSupabase = {
+  id: string
+  banco: string
+  alias: string | null
+  numero_cuenta: string | null
+  es_legacy: boolean
+}
+
 export async function obtenerCuentasBancarias(
   cliente: SupabaseClient,
   empresaId: string
@@ -43,7 +53,7 @@ export async function obtenerCuentasBancarias(
     return { ok: false, mensaje: mensajeErrorControlado('cargar las cuentas bancarias') }
   }
 
-  const cuentas: CuentaBancaria[] = (data || []).map((r: any) => ({
+  const cuentas: CuentaBancaria[] = ((data || []) as FilaCuentaBancariaSupabase[]).map((r) => ({
     id: r.id,
     banco: r.banco,
     alias: r.alias,
