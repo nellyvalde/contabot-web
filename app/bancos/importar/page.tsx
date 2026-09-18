@@ -28,6 +28,7 @@ import {
 } from '@/lib/bancos/parsearExtractoAvVillas'
 import { mensajeErrorControlado, registrarErrorSupabase } from '@/lib/bancos/erroresBancos'
 import { claveConsulta, ejecutarSiVigente } from '@/lib/bancos/consultaVigente'
+import { formatearValorMoneda } from '@/lib/bancos/formatearValorMoneda'
 
 export default function ImportarExtractoPage() {
   const { empresaActiva } = useEmpresa()
@@ -129,6 +130,18 @@ export default function ImportarExtractoPage() {
   const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/' }
 
   const handleCuentaSeleccionada = (nuevaCuentaId: string) => {
+    // Invalida el archivo en curso INMEDIATAMENTE, de forma sincronica, en
+    // el mismo evento -- no espera a que cuentaSeleccionadaRenderizadaRef
+    // se actualice en el useLayoutEffect de arriba, que recien corre en el
+    // SIGUIENTE commit de React. Cierra la ventana entre "el usuario
+    // cambia de cuenta" (este evento) y "React vuelve a renderizar": sin
+    // esto, una respuesta ya resuelta (un microtask) podria colarse en esa
+    // ventana y leer todavia el valor viejo de cuentaSeleccionadaRenderizadaRef.
+    // '' nunca es una clave real (claveConsulta siempre une partes no
+    // vacias con '::'), asi que descarta cualquier operacion pendiente sin
+    // ambiguedad.
+    consultaArchivoRef.current = ''
+
     setCuentaSeleccionada(nuevaCuentaId)
     // Cambiar de cuenta invalida cualquier previsualizacion en pantalla --
     // ya no corresponde a la cuenta que ahora esta seleccionada.
@@ -148,6 +161,20 @@ export default function ImportarExtractoPage() {
     const cuentaId = cuentaSeleccionada
     if (!empresaId || !cuentaId) return
 
+    // Invalida INMEDIATAMENTE cualquier operacion de archivo anterior que
+    // siga en curso -- ANTES de validar este archivo nuevo, no despues.
+    // Si se hiciera despues (o solo dentro de ejecutarSiVigente, mas
+    // abajo), un archivo anterior lento y valido conservaria su clave
+    // vigente cuando este archivo nuevo falla la validacion y la funcion
+    // retorna temprano SIN llegar a llamar a ejecutarSiVigente -- nada
+    // reemplazaria esa clave, y el resultado obsoleto del primer archivo
+    // podria aplicarse igual cuando por fin resuelva. Un token nuevo
+    // (claveConsulta) se genera y se escribe en el ref de una vez, se use
+    // o no mas abajo.
+    const token = crypto.randomUUID()
+    const clave = claveConsulta(empresaId, cuentaId, token)
+    consultaArchivoRef.current = clave
+
     setNombreArchivo(file.name)
     setMovimientos([])
     setFilasConError([])
@@ -157,22 +184,17 @@ export default function ImportarExtractoPage() {
     const validacion = validarArchivoAntesDeLeer(file.name, file.size)
     if (!validacion.ok) {
       // Sincronico, sin ningun await de por medio -- no puede quedar
-      // obsoleto, se aplica directo.
+      // obsoleto, se aplica directo. La clave ya se invalido arriba, asi
+      // que esta rama de salida temprana no deja ningun rastro que un
+      // archivo anterior en curso pueda seguir usando.
       setErrorArchivo(validacion.error)
       return
     }
 
-    // Identidad capturada AQUI, antes de file.arrayBuffer() (el unico
-    // await real de este flujo): empresaId, cuentaId, y un token de
-    // operacion unico (claveConsulta ya incluye el token, asi que un
-    // segundo archivo seleccionado antes de que el primero termine de
-    // leerse siempre reemplaza la clave vigente). Si la empresa o la
-    // cuenta activas cambian mientras el archivo se esta leyendo o
-    // parseando, `esVigente` lo detecta al terminar y el resultado se
-    // descarta sin tocar la UI -- ni el archivo de otra cuenta, ni un
-    // error, ni una previsualizacion.
-    const token = crypto.randomUUID()
-    const clave = claveConsulta(empresaId, cuentaId, token)
+    // Si la empresa o la cuenta activas cambian mientras el archivo se
+    // esta leyendo o parseando, `esVigente` lo detecta al terminar y el
+    // resultado se descarta sin tocar la UI -- ni el archivo de otra
+    // cuenta, ni un error, ni una previsualizacion.
     const esVigente = () =>
       empresaIdRenderizadoRef.current === empresaId && cuentaSeleccionadaRenderizadaRef.current === cuentaId
 
@@ -277,7 +299,7 @@ export default function ImportarExtractoPage() {
                         <td className="px-4 py-2 text-slate-400">{m.fila}</td>
                         <td className="px-4 py-2 text-slate-600">{m.fecha}</td>
                         <td className="px-4 py-2 text-slate-700 max-w-xs truncate">{m.descripcion}</td>
-                        <td className="px-4 py-2 font-medium text-slate-900">${Math.round(m.valor).toLocaleString()}</td>
+                        <td className="px-4 py-2 font-medium text-slate-900">{formatearValorMoneda(m.valor)}</td>
                       </tr>
                     ))}
                   </tbody>

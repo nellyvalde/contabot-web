@@ -90,3 +90,45 @@ describe('app/bancos/importar -- Bloques A y B, sin enlazar (Bloques C y D requi
     expect(parser).not.toMatch(/from '@\/lib\/bancos\/config'/)
   })
 })
+
+describe('app/bancos/importar/page.tsx -- invalidación sincrónica de la clave vigente (corrección de revisión)', () => {
+  function extraerFuncion(pagina: string, nombre: string): string {
+    const inicio = pagina.indexOf(`const ${nombre} = `)
+    expect(inicio, `no se encontró la función ${nombre}`).toBeGreaterThanOrEqual(0)
+    const resto = pagina.slice(inicio)
+    const fin = resto.search(/\n {2}\}/)
+    expect(fin, `no se pudo delimitar el cuerpo de ${nombre}`).toBeGreaterThanOrEqual(0)
+    return resto.slice(0, fin)
+  }
+
+  it('handleArchivoSeleccionado invalida consultaArchivoRef ANTES de llamar a validarArchivoAntesDeLeer -- no solo dentro de ejecutarSiVigente', () => {
+    const pagina = leer('../../../app/bancos/importar/page.tsx')
+    const cuerpo = extraerFuncion(pagina, 'handleArchivoSeleccionado')
+
+    const indiceInvalidacion = cuerpo.indexOf('consultaArchivoRef.current = clave')
+    const indiceValidacion = cuerpo.indexOf('validarArchivoAntesDeLeer(')
+
+    expect(indiceInvalidacion, 'no se encontró la invalidación sincrónica de consultaArchivoRef').toBeGreaterThanOrEqual(0)
+    expect(indiceValidacion, 'no se encontró la llamada a validarArchivoAntesDeLeer').toBeGreaterThanOrEqual(0)
+    expect(indiceInvalidacion).toBeLessThan(indiceValidacion)
+  })
+
+  it('handleCuentaSeleccionada invalida consultaArchivoRef de forma sincrónica al cambiar de cuenta', () => {
+    const pagina = leer('../../../app/bancos/importar/page.tsx')
+    const cuerpo = extraerFuncion(pagina, 'handleCuentaSeleccionada')
+    expect(cuerpo).toMatch(/consultaArchivoRef\.current = ''/)
+  })
+})
+
+describe('app/bancos/importar/page.tsx -- previsualización de valores (corrección de revisión)', () => {
+  it('la celda de Valor NUNCA usa Math.round -- los centavos no se descartan en la previsualización', () => {
+    const pagina = leer('../../../app/bancos/importar/page.tsx')
+    expect(pagina).not.toMatch(/Math\.round/)
+  })
+
+  it('la celda de Valor usa formatearValorMoneda (formateador puro, con dos decimales exactos)', () => {
+    const pagina = leer('../../../app/bancos/importar/page.tsx')
+    expect(pagina).toMatch(/\{formatearValorMoneda\(m\.valor\)\}/)
+    expect(pagina).toMatch(/from '@\/lib\/bancos\/formatearValorMoneda'/)
+  })
+})

@@ -157,4 +157,78 @@ describe('identidad vigente al seleccionar un archivo (app/bancos/importar/page.
 
     expect(aplicados).toEqual([])
   })
+
+  it('primer archivo lento y válido en curso; se selecciona un segundo archivo que falla la validación (nunca llega a llamar ejecutarSiVigente): el primero nunca aplica movimientos', async () => {
+    // Reproduce el bug corregido: antes, la clave vigente solo se
+    // reemplazaba DENTRO de ejecutarSiVigente. Un archivo nuevo que falla
+    // validarArchivoAntesDeLeer retorna ANTES de llegar a llamar
+    // ejecutarSiVigente, asi que nunca reemplazaba la clave -- un primer
+    // archivo lento y valido, todavia en curso, conservaba su clave
+    // vigente y podia aplicar sus movimientos igual. El fix invalida la
+    // clave de forma sincronica al INICIO de handleArchivoSeleccionado,
+    // antes de la validacion -- se reproduce aqui llamando
+    // estado.establecerClaveVigente(...) directamente, sin pasar por
+    // ejecutarSiVigente, exactamente como hace ahora el componente.
+    const estado = crearEstado()
+    const aplicados: ResultadoParseoAvVillas[] = []
+    const empresaRenderizada = 'empresa-A'
+    const cuentaRenderizada = 'cuenta-1'
+    const esVigente = () => empresaRenderizada === 'empresa-A' && cuentaRenderizada === 'cuenta-1'
+
+    const claveArchivo1 = claveConsulta('empresa-A', 'cuenta-1', 'token-1')
+    const promesa1 = ejecutarSiVigente(
+      estado,
+      claveArchivo1,
+      () => tareaLeerYParsear(archivoFalso(30, 'archivo-1.xlsx')),
+      (r) => aplicados.push(r),
+      esVigente
+    )
+
+    // El usuario selecciona un segundo archivo casi de inmediato, pero
+    // este falla la validación de tipo/tamaño -- en el componente real,
+    // handleArchivoSeleccionado invalida la clave ANTES de validar,
+    // independientemente de si la validación falla después.
+    await esperar(5)
+    const claveArchivo2 = claveConsulta('empresa-A', 'cuenta-1', 'token-2')
+    estado.establecerClaveVigente(claveArchivo2) // invalidación sincrónica, sin pasar por ejecutarSiVigente
+    // (la validación del segundo archivo falla aquí en el componente real
+    // -- no se llega a invocar ejecutarSiVigente para él, así que nunca se
+    // agrega nada nuevo a `aplicados` por su parte)
+
+    await promesa1
+
+    // El primer archivo -- aunque válido y con su propia identidad
+    // empresa/cuenta todavía vigente -- nunca debe aplicar resultados: su
+    // clave ya no es la vigente.
+    expect(aplicados).toEqual([])
+  })
+
+  it('cambiar de cuenta invalida sincrónicamente la clave vigente, incluso si esVigente() (basado en el ref renderizado) todavía no reflejó el cambio', async () => {
+    // Reproduce la corrección de "cerrar la ventana entre el evento y el
+    // siguiente commit de React": handleCuentaSeleccionada ahora escribe
+    // consultaArchivoRef.current = '' de forma SINCRONICA, en el mismo
+    // evento, sin esperar a que el useLayoutEffect actualice
+    // cuentaSeleccionadaRenderizadaRef. Aquí se simula el caso extremo en
+    // que esVigente() (el chequeo por ref renderizado) todavía diría "sí,
+    // sigue vigente" -- la protección por CLAVE, invalidada de inmediato,
+    // debe bastar por sí sola para descartar el resultado.
+    const estado = crearEstado()
+    const aplicados: ResultadoParseoAvVillas[] = []
+    // esVigente() nunca cambia en esta prueba -- deliberadamente, para
+    // aislar que la protección por clave funciona incluso sin ayuda del
+    // chequeo de identidad.
+    const esVigente = () => true
+
+    const clave = claveConsulta('empresa-A', 'cuenta-1', 'token-1')
+    const promesa = ejecutarSiVigente(estado, clave, () => tareaLeerYParsear(archivoFalso(20)), (r) => aplicados.push(r), esVigente)
+
+    await esperar(5)
+    // Simula handleCuentaSeleccionada: invalidación sincrónica de la
+    // clave, disparada por el cambio de cuenta, independiente del ref.
+    estado.establecerClaveVigente('')
+
+    await promesa
+
+    expect(aplicados).toEqual([])
+  })
 })
